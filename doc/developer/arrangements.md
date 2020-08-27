@@ -24,6 +24,7 @@ Arrangements are actually indexed assuming that `data` has a `(key, val)` struct
 The index is by `key`, which will be important in understanding when arrangements can be shared and reused.
 Materialize will attempt to choose a `key` to ensure that the data are well distributed.
 For example, if a collection has a primary key, Materialize will default to this key for an arrangement.
+If Materialize cannot find a clear key, it will use the entire record as the key.
 Each of `key` and `val` can be `()`, corresponding to "no key" and "the key is the value", respectively.
 
 To investigate the existing arrangements, query the `mz_arrangement_sizes` logging source.
@@ -31,7 +32,7 @@ There are several diagnostic views in `mz_catalog` that connect this information
 
 ## Which operators need Arrangements?
 
-We create more arrangements that just those to house materialized sources and views.
+We create more arrangements than just those that house materialized sources and views.
 Many internal operators require arrangements so that they can respond efficiently to changes.
 For example, the differential dataflow `join` operator requires that each of its two inputs be an arrangement.
 Specifically, each arrangement must have as its `key` the fields that will be equated by the join.
@@ -88,6 +89,8 @@ Our `ArrangeBy` operator creates one arrangement.
 
 For each of these relational operators, the associated memory footprint should determined by the sizes of the arranged collections.
 
+Other operators, includig `Project`, `Map`, `Filter`, `Let`, `Get`, `FlatMap`, `Negate`, and `Union` do not create arrangements, and should have nominal standing memory cost.
+
 ## Caveats: Shared Arrangements
 
 Arrangements may be shared between operators in the same dataflow, or across dataflows if an arrangement is published by the dataflow that creates it.
@@ -106,15 +109,20 @@ An arrangement is identified by the worker and operator that created it.
 
 ## Caveats: Demand Analysis
 
-When users present queries and views to us, we can determine that some fields are not required.
+When users present queries and views to Materialize, we can determine that some fields are not required.
 We blank out any field that is not required.
 This can reduce the number of distinct `data` in an arrangement, which will reduce the size of the arrangement.
 
+For example, consider a query that joins together three relations and then reduces them using a few fields as a key.
+The key fields and any fields in the aggregation are important for correct execution.
+Any other fields can be removed, which reduces the memory requirement of the intermediate arrangement in the join.
+
 ## Caveats: Delta Joins
 
-In certain circumstances, we plan `Join` operators using a different pattern which avoids the intermediate arrangements.
-The alternate plan uses more arrangements, but the arrangements are more likely to be shareable with other queries.
-Informally, if all collections have arrangements by all of their primary and foreign keys, we can apply the Delta Join plan.
+When possible, we plan `Join` operators using a different pattern which avoids any intermediate arrangements.
+This avoids the creation of any new arrangements, but it relies on the existence of many input arrangement.
+This alternate plan uses more arrangements in total, but the arrangements are more likely to be shareable with other queries.
+Informally, if all input collections have arrangements by all of their primary keys and any foreign keys used, then we can apply the Delta Join plan.
 
 The plan removes the requirement that the intermediate results be arranged, but requires a separate dataflow for each input.
 For example, we would be able to write the following dataflow to handle changes to `In1`:
@@ -125,5 +133,3 @@ For example, we would be able to write the following dataflow to handle changes 
 ```
 But, we would also need to create similar dataflow graphs for each of `In2`, `In3`, and `In4`.
 In each case they only require arrangements of the input, but they may be by different keys.
-
-If a `Join` is implemented by a Delta Join pattern, it will create zero additional arrangements.
