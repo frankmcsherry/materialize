@@ -42,7 +42,7 @@ use repr::{Datum, Row, RowArena, RowPacker};
 /// state and the arguments it takes when invoked. It was not clear how to do
 /// this with a Rust closure (glorious battle was waged, but ultimately lost).
 #[derive(Debug)]
-struct JoinClosure {
+pub struct JoinClosure {
     ready_equivalences: Vec<Vec<MirScalarExpr>>,
     before: MapFilterProject,
 }

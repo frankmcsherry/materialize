@@ -543,7 +543,7 @@ use differential_dataflow::Collection;
 /// Constructs a `lookup_map` from supplied arguments.
 ///
 /// This method exists to factor common logic from four code paths that are generic over the type of trace.
-fn build_lookup<G, Tr>(
+pub fn build_lookup<G, Tr>(
     updates: Collection<G, Row>,
     trace: Arranged<G, Tr>,
     prev_key: Vec<MirScalarExpr>,

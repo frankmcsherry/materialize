@@ -477,4 +477,67 @@ where
 
         (oks.as_collection(), err.as_collection())
     }
+
+    /// A specialization of `differential_join` for one-off dataflows.
+    ///
+    /// This dataflow does not correctly update in response to changes in the
+    /// non-spine inputs, and should only be examined at the dataflow's `as_of`
+    /// time, which should be the minimum time for all inputs.
+    fn differential_join_one_off(
+        &mut self,
+        joined: JoinedFlavor<G, T>,
+        stream_key: Vec<MirScalarExpr>,
+        lookup_relation: &MirRelationExpr,
+        lookup_key: Vec<MirScalarExpr>,
+        closure: JoinClosure,
+        errors: &mut Vec<Collection<G, DataflowError>>,
+    ) -> Collection<G, Row> {
+        // If we have only a streamed collection, we must first form an arrangement.
+        let updates = match joined {
+            JoinedFlavor::Collection(stream) => stream,
+            JoinedFlavor::Local(local) => local.as_collection(|_, row| row.clone()),
+            JoinedFlavor::Trace(trace) => trace.as_collection(|_, row| row.clone()),
+        };
+
+        // Pre-test for the arrangement existence, so that we can populate it if the
+        // collection is present but the arrangement is not.
+        if self.arrangement(lookup_relation, &lookup_key[..]).is_none() {
+            // The join may be faulty, and announce keys for an arrangement we have
+            // not formed. This *shouldn't* happen, but we prefer to do something
+            // sane rather than panic.
+            // TODO: If this ever trips, the `collection` call is a wasteful way to
+            // determine if we have rendered the collection.
+            if self.collection(lookup_relation).is_some() {
+                let arrange_by = MirRelationExpr::ArrangeBy {
+                    input: Box::new(lookup_relation.clone()),
+                    keys: vec![lookup_key.to_vec()],
+                };
+                self.render_arrangeby(&arrange_by, Some("MissingArrangement"));
+            } else {
+                panic!("Arrangement alarmingly absent!");
+            }
+        }
+
+        let results = match self.arrangement(lookup_relation, &lookup_key[..]) {
+            Some(ArrangementFlavor::Local(oks, errs1)) => {
+                let (oks, errs2) =
+                    super::delta_join::build_lookup(updates, oks, stream_key, closure);
+                errors.push(errs1.as_collection(|k, _v| k.clone()));
+                errors.push(errs2);
+                oks
+            }
+            Some(ArrangementFlavor::Trace(_gid, oks, errs1)) => {
+                let (oks, errs2) =
+                    super::delta_join::build_lookup(updates, oks, stream_key, closure);
+                errors.push(errs1.as_collection(|k, _v| k.clone()));
+                errors.push(errs2);
+                oks
+            }
+            None => {
+                unreachable!("Arrangement absent despite explicit construction");
+            }
+        };
+
+        results
+    }
 }
