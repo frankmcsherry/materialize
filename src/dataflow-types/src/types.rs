@@ -95,6 +95,8 @@ pub struct DataflowDesc {
     /// the upper bound of `since` frontiers contributing to the dataflow.
     /// It is an error for this to be set to a frontier not beyond that default.
     pub as_of: Option<Antichain<Timestamp>>,
+    /// Indicates if the dataflow only needs to be accurate at `as_of`.
+    pub one_off: bool,
     /// Human readable name
     pub debug_name: String,
 }
@@ -246,6 +248,11 @@ impl DataflowDesc {
     /// computation permits.
     pub fn set_as_of(&mut self, as_of: Antichain<Timestamp>) {
         self.as_of = Some(as_of);
+    }
+
+    /// Rewrites the join to work
+    pub fn set_one_off(&mut self) {
+        self.one_off = true;
     }
 
     /// Collects all indexes required to construct all exports.

@@ -1267,6 +1267,7 @@ pub enum JoinImplementation {
     Differential(
         (usize, Option<Vec<MirScalarExpr>>),
         Vec<(usize, Vec<MirScalarExpr>)>,
+        bool,
     ),
     /// Perform independent delta query dataflows for each input.
     ///

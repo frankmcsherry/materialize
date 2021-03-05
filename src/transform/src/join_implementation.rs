@@ -369,7 +369,7 @@ mod differential {
             }
 
             // Install the implementation.
-            *implementation = JoinImplementation::Differential((start, start_keys), order);
+            *implementation = JoinImplementation::Differential((start, start_keys), order, false);
 
             if !lifted.is_empty() {
                 new_join = new_join.filter(lifted);

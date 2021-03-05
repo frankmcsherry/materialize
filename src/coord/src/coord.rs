@@ -2391,6 +2391,7 @@ impl Coordinator {
                 let view_id = self.allocate_transient_id()?;
                 let mut dataflow = DataflowDesc::new(format!("temp-view-{}", view_id));
                 dataflow.set_as_of(Antichain::from_elem(timestamp));
+                dataflow.set_one_off();
                 self.dataflow_builder()
                     .import_view_into_dataflow(&view_id, &source, &mut dataflow);
                 dataflow.add_index_to_build(index_id, view_id, typ.clone(), key.clone());
@@ -3285,6 +3286,7 @@ impl Coordinator {
 
         // Optimize the dataflow across views, and any other ways that appeal.
         transform::optimize_dataflow(&mut dataflow);
+        dataflow.set_one_off();
 
         // Finalize the dataflow by broadcasting its construction to all workers.
         self.broadcast(SequencedCommand::CreateDataflows(vec![dataflow]));

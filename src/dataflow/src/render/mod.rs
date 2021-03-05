@@ -429,7 +429,7 @@ where
                     self.ensure_rendered(input, scope, worker_index);
                 }
                 match implementation {
-                    expr::JoinImplementation::Differential(_start, _order) => {
+                    expr::JoinImplementation::Differential(_start, _order, _) => {
                         let collection = self.render_join(input, mfp, scope);
                         self.collections.insert(relation_expr.clone(), collection);
                     }
@@ -599,7 +599,7 @@ where
                     let input_mapper = expr::JoinInputMapper::new(inputs);
                     let mfp = MapFilterProject::new(input_mapper.total_columns());
                     match implementation {
-                        expr::JoinImplementation::Differential(_start, _order) => {
+                        expr::JoinImplementation::Differential(_start, _order, _) => {
                             let collection = self.render_join(relation_expr, mfp, scope);
                             self.collections.insert(relation_expr.clone(), collection);
                         }

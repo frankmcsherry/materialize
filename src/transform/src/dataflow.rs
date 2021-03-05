@@ -35,6 +35,22 @@ pub fn optimize_dataflow(dataflow: &mut DataflowDesc) {
     // the filters are applied.
     optimize_dataflow_demand(dataflow);
     monotonic::optimize_dataflow_monotonic(dataflow);
+
+    // If the dataflow is one-off, indicate that in join plans.
+    if dataflow.one_off {
+        for description in dataflow.objects_to_build.iter_mut() {
+            description.relation_expr.0.visit_mut(&mut |e| {
+                if let MirRelationExpr::Join {
+                    implementation,
+                    ..
+                } = e {
+                    if let expr::JoinImplementation::Differential(_, _, one_off) = implementation {
+                        *one_off = true;
+                    }
+                }
+            });
+        }
+    }
 }
 
 /// Inline views used in one other view, and in no exported objects.

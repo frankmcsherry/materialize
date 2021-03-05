@@ -181,7 +181,7 @@ where
             inputs,
             equivalences,
             demand,
-            implementation: expr::JoinImplementation::Differential((start, _start_arr), order),
+            implementation: expr::JoinImplementation::Differential((start, _start_arr), order, one_off),
         } = relation_expr
         {
             let input_mapper = expr::JoinInputMapper::new(inputs);
@@ -279,14 +279,25 @@ where
             for stage_plan in linear_plan.stage_plans.into_iter() {
                 // Different variants of `joined` implement this differently,
                 // and the logic is centralized there.
-                let stream = self.differential_join(
-                    joined,
-                    stage_plan.stream_key,
-                    &inputs[stage_plan.lookup_relation],
-                    stage_plan.lookup_key,
-                    stage_plan.closure,
-                    &mut errors,
-                );
+                let stream = if *one_off {
+                    self.differential_join_one_off(
+                        joined,
+                        stage_plan.stream_key,
+                        &inputs[stage_plan.lookup_relation],
+                        stage_plan.lookup_key,
+                        stage_plan.closure,
+                        &mut errors,
+                    )
+                } else {
+                    self.differential_join(
+                        joined,
+                        stage_plan.stream_key,
+                        &inputs[stage_plan.lookup_relation],
+                        stage_plan.lookup_key,
+                        stage_plan.closure,
+                        &mut errors,
+                    )
+                };
                 // Update joined results and capture any errors.
                 joined = JoinedFlavor::Collection(stream);
             }
@@ -493,8 +504,9 @@ where
         errors: &mut Vec<Collection<G, DataflowError>>,
     ) -> Collection<G, Row> {
         // If we have only a streamed collection, we must first form an arrangement.
+        use differential_dataflow::operators::Consolidate;
         let updates = match joined {
-            JoinedFlavor::Collection(stream) => stream,
+            JoinedFlavor::Collection(stream) => stream.consolidate(),
             JoinedFlavor::Local(local) => local.as_collection(|_, row| row.clone()),
             JoinedFlavor::Trace(trace) => trace.as_collection(|_, row| row.clone()),
         };
