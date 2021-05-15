@@ -9,14 +9,13 @@
 
 use differential_dataflow::lattice::Lattice;
 use differential_dataflow::operators::arrange::arrangement::Arrange;
-use differential_dataflow::operators::arrange::arrangement::ArrangeByKey;
-use differential_dataflow::trace::implementations::ord::OrdValSpine;
 use timely::dataflow::Scope;
 use timely::progress::{timestamp::Refines, Timestamp};
 
 use expr::MirRelationExpr;
 use repr::Row;
 
+use crate::arrangement::manager::RowSpine;
 use crate::render::context::{ArrangementFlavor, Context};
 
 impl<G, T> Context<G, MirRelationExpr, Row, T>
@@ -47,7 +46,7 @@ where
                             (key_row, row)
                         }
                     })
-                    .arrange_by_key();
+                    .arrange::<RowSpine<_, _, _, _>>();
                 self.set_local_columns(&input, &keys[..], (ok_keyed, err_built.arrange()));
             }
 
@@ -55,29 +54,23 @@ where
 
             let (ok_arranged, err_arranged) = match self.arrangement_columns(&input, &keys[..]) {
                 Some(ArrangementFlavor::Local(oks, errs)) => (
-                    oks.reduce_abelian::<_, OrdValSpine<_, _, _, _>>(
-                        "Threshold",
-                        move |_k, s, t| {
-                            for (record, count) in s.iter() {
-                                if *count > 0 {
-                                    t.push(((*record).clone(), *count));
-                                }
+                    oks.reduce_abelian::<_, RowSpine<_, _, _, _>>("Threshold", move |_k, s, t| {
+                        for (record, count) in s.iter() {
+                            if *count > 0 {
+                                t.push(((*record).clone(), *count));
                             }
-                        },
-                    ),
+                        }
+                    }),
                     errs,
                 ),
                 Some(ArrangementFlavor::Trace(_gid, oks, errs)) => (
-                    oks.reduce_abelian::<_, OrdValSpine<_, _, _, _>>(
-                        "Threshold",
-                        move |_k, s, t| {
-                            for (record, count) in s.iter() {
-                                if *count > 0 {
-                                    t.push(((*record).clone(), *count));
-                                }
+                    oks.reduce_abelian::<_, RowSpine<_, _, _, _>>("Threshold", move |_k, s, t| {
+                        for (record, count) in s.iter() {
+                            if *count > 0 {
+                                t.push(((*record).clone(), *count));
                             }
-                        },
-                    ),
+                        }
+                    }),
                     errs.as_collection(|k, _v| k.clone()).arrange(),
                 ),
                 None => {

@@ -9,7 +9,6 @@
 
 use differential_dataflow::lattice::Lattice;
 use differential_dataflow::operators::arrange::arrangement::Arrange;
-use differential_dataflow::trace::implementations::ord::{OrdKeySpine, OrdValSpine};
 use timely::dataflow::Scope;
 use timely::progress::{timestamp::Refines, Timestamp};
 
@@ -49,10 +48,11 @@ where
                         Ok::<_, DataflowError>((key_row, row))
                     });
                     let err_collection = err_built.concat(&err_collection);
-                    let ok_arrangement =
-                        ok_collection.arrange_named::<OrdValSpine<_, _, _, _>>(&name);
+
+                    use crate::arrangement::manager::{ErrSpine, RowSpine};
+                    let ok_arrangement = ok_collection.arrange_named::<RowSpine<_, _, _, _>>(&name);
                     let err_arrangement = err_collection
-                        .arrange_named::<OrdKeySpine<_, _, _>>(&format!("{}-errors", name));
+                        .arrange_named::<ErrSpine<_, _, _>>(&format!("{}-errors", name));
                     self.set_local(&input, key_set, (ok_arrangement, err_arrangement));
                 }
                 if self.arrangement(relation_expr, key_set).is_none() {

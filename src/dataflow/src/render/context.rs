@@ -15,8 +15,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 
 use differential_dataflow::lattice::Lattice;
-use differential_dataflow::operators::arrange::{Arranged, TraceAgent};
-use differential_dataflow::trace::implementations::ord::{OrdKeySpine, OrdValSpine};
+use differential_dataflow::operators::arrange::Arranged;
 use differential_dataflow::trace::wrappers::enter::TraceEnter;
 use differential_dataflow::trace::wrappers::frontier::TraceFrontier;
 use differential_dataflow::trace::BatchReader;
@@ -32,28 +31,23 @@ use timely::progress::{Antichain, Timestamp};
 use dataflow_types::{DataflowDesc, DataflowError};
 use expr::{GlobalId, MirScalarExpr};
 
+use crate::arrangement::manager::{TraceErrHandle, TraceRowHandle};
 use crate::source::SourceToken;
-
-/// A trace handle for key-only data.
-pub type TraceKeyHandle<K, T, R> = TraceAgent<OrdKeySpine<K, T, R>>;
-
-/// A trace handle for key-value data.
-pub type TraceValHandle<K, V, T, R> = TraceAgent<OrdValSpine<K, V, T, R>>;
 
 pub type Diff = isize;
 
 // Local type definition to avoid the horror in signatures.
-pub type Arrangement<S, V> = Arranged<S, TraceValHandle<V, V, <S as ScopeParent>::Timestamp, Diff>>;
+pub type Arrangement<S, V> = Arranged<S, TraceRowHandle<V, V, <S as ScopeParent>::Timestamp, Diff>>;
 pub type ErrArrangement<S> =
-    Arranged<S, TraceKeyHandle<DataflowError, <S as ScopeParent>::Timestamp, Diff>>;
+    Arranged<S, TraceErrHandle<DataflowError, <S as ScopeParent>::Timestamp, Diff>>;
 pub type ArrangementImport<S, V, T> = Arranged<
     S,
-    TraceEnter<TraceFrontier<TraceValHandle<V, V, T, Diff>>, <S as ScopeParent>::Timestamp>,
+    TraceEnter<TraceFrontier<TraceRowHandle<V, V, T, Diff>>, <S as ScopeParent>::Timestamp>,
 >;
 pub type ErrArrangementImport<S, T> = Arranged<
     S,
     TraceEnter<
-        TraceFrontier<TraceKeyHandle<DataflowError, T, Diff>>,
+        TraceFrontier<TraceErrHandle<DataflowError, T, Diff>>,
         <S as ScopeParent>::Timestamp,
     >,
 >;
@@ -68,7 +62,7 @@ pub type ErrArrangementImport<S, T> = Arranged<
 /// former must refine the latter. The former is the timestamp used by the scope in question,
 /// and the latter is the timestamp of imported traces. The two may be different in the case
 /// of regions or iteration.
-pub struct Context<S: Scope, P, V: Data, T>
+pub struct Context<S: Scope, P, V: Data + columnation::Columnation, T>
 where
     P: Eq + std::hash::Hash + Clone,
     T: Timestamp + Lattice,
@@ -108,7 +102,7 @@ where
     >,
 }
 
-impl<S: Scope, P, V: Data, T> Context<S, P, V, T>
+impl<S: Scope, P, V: Data + columnation::Columnation, T> Context<S, P, V, T>
 where
     P: Eq + std::hash::Hash + Clone,
     T: Timestamp + Lattice,
@@ -412,7 +406,7 @@ where
 }
 
 /// Describes flavor of arrangement: local or imported trace.
-pub enum ArrangementFlavor<S: Scope, V: Data, T: Lattice>
+pub enum ArrangementFlavor<S: Scope, V: Data + columnation::Columnation, T: Lattice>
 where
     T: Timestamp + Lattice,
     S::Timestamp: Lattice + Refines<T>,
