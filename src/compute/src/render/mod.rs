@@ -111,6 +111,7 @@ use timely::dataflow::operators::to_stream::ToStream;
 use timely::dataflow::operators::InspectCore;
 use timely::dataflow::scopes::Child;
 use timely::dataflow::{Scope, Stream};
+use timely::order::Product;
 use timely::progress::Timestamp;
 use timely::worker::Worker as TimelyWorker;
 use timely::PartialOrder;
@@ -133,6 +134,7 @@ use context::{ArrangementFlavor, Context};
 
 pub mod context;
 mod flat_map;
+mod iteration;
 mod join;
 mod reduce;
 pub mod sinks;
@@ -149,6 +151,17 @@ pub fn build_compute_dataflow<A: Allocate>(
     compute_state: &mut ComputeState,
     dataflow: DataflowDescription<Plan, CollectionMetadata>,
 ) {
+    // Mutually recursive view definitions require special handling.
+    let recursive = dataflow.objects_to_build.iter().any(|object| {
+        use mz_expr::CollectionPlan;
+        let mut depends_on = BTreeSet::new();
+        object.plan.depends_on_into(&mut depends_on);
+        depends_on.into_iter().any(|id| id >= object.id)
+    });
+    if recursive {
+        return iteration::build_compute_dataflow(timely_worker, compute_state, dataflow);
+    }
+
     let worker_logging = timely_worker.log_register().get("timely");
     let name = format!("Dataflow: {}", &dataflow.debug_name);
 
@@ -252,7 +265,7 @@ pub fn build_compute_dataflow<A: Allocate>(
 
             // Export declared sinks.
             for (sink_id, imports, sink) in sinks {
-                context.export_sink(region, compute_state, &mut tokens, imports, sink_id, &sink);
+                context.export_sink(compute_state, &mut tokens, imports, sink_id, &sink);
             }
         });
     })
@@ -657,5 +670,23 @@ impl RenderTimestamp for mz_repr::Timestamp {
     }
     fn step_back(&self) -> Self {
         self.saturating_sub(1)
+    }
+}
+
+impl<T: Timestamp + Lattice> RenderTimestamp for Product<mz_repr::Timestamp, T> {
+    fn system_time(&mut self) -> &mut mz_repr::Timestamp {
+        &mut self.outer
+    }
+    fn system_delay(delay: mz_repr::Timestamp) -> <Self as Timestamp>::Summary {
+        Product::new(delay, Default::default())
+    }
+    fn event_time(&mut self) -> &mut mz_repr::Timestamp {
+        &mut self.outer
+    }
+    fn event_delay(delay: mz_repr::Timestamp) -> <Self as Timestamp>::Summary {
+        Product::new(delay, Default::default())
+    }
+    fn step_back(&self) -> Self {
+        Product::new(self.outer.saturating_sub(1), self.inner.clone())
     }
 }
