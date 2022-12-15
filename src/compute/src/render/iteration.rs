@@ -33,6 +33,11 @@ use crate::arrangement::manager::TraceBundle;
 use crate::compute_state::ComputeState;
 use crate::render::RenderTimestamp;
 
+/// Assemble the "compute"  side of a dataflow, i.e. all but the sources.
+///
+/// This method imports sources from provided assets, and then builds the remaining
+/// dataflow using "compute-local" assets like shared arrangements, and producing
+/// both arrangements and sinks.
 pub fn build_compute_dataflow<A: Allocate>(
     timely_worker: &mut TimelyWorker<A>,
     compute_state: &mut ComputeState,
@@ -138,6 +143,14 @@ pub fn build_compute_dataflow<A: Allocate>(
             let mut variables = BTreeMap::new();
             for object in dataflow.objects_to_build.iter() {
                 use differential_dataflow::operators::iterate::Variable;
+                use mz_expr::CollectionPlan;
+
+                let mut depends_on = BTreeSet::new();
+                object.plan.depends_on_into(&mut depends_on);
+                let recursive = depends_on.into_iter().any(|id| id >= object.id);
+                if !recursive {
+                    continue;
+                }
 
                 let oks_v = Variable::new(region, Product::new(Default::default(), 1));
                 let err_v = Variable::new(region, Product::new(Default::default(), 1));
@@ -153,11 +166,12 @@ pub fn build_compute_dataflow<A: Allocate>(
                 let bundle = context.render_plan(object.plan, region, region.index());
                 // We need to ensure that the raw collection exists, but do not have enough information
                 // here to cause that to happen.
-                let (oks, err) = bundle.collection.clone().unwrap();
+                if let Some((oks_v, err_v)) = variables.remove(&id) {
+                    let (oks, err) = bundle.collection.as_ref().expect("Collection must exist");
+                    oks_v.set(oks);
+                    err_v.set(err);
+                }
                 context.insert_id(Id::Global(object.id), bundle);
-                let (oks_v, err_v) = variables.remove(&id).unwrap();
-                oks_v.set(&oks);
-                err_v.set(&err);
             }
 
             // Export declared indexes.

@@ -100,32 +100,24 @@
 //! stream. This reduces the amount of recomputation that must be performed
 //! if/when the errors are retracted.
 
-use std::any::Any;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use differential_dataflow::AsCollection;
-use timely::communication::Allocate;
 use timely::dataflow::operators::to_stream::ToStream;
 use timely::dataflow::operators::InspectCore;
 use timely::dataflow::scopes::Child;
 use timely::dataflow::{Scope, Stream};
 use timely::order::Product;
 use timely::progress::Timestamp;
-use timely::worker::Worker as TimelyWorker;
 use timely::PartialOrder;
 
 use mz_compute_client::plan::Plan;
-use mz_compute_client::types::dataflows::{BuildDesc, DataflowDescription, IndexDesc};
+use mz_compute_client::types::dataflows::IndexDesc;
 use mz_expr::Id;
-use mz_ore::collections::CollectionExt as IteratorExt;
 use mz_repr::{Diff, GlobalId, Row};
-use mz_storage_client::controller::CollectionMetadata;
-use mz_storage_client::source::persist_source;
 use mz_storage_client::types::errors::DataflowError;
 
-use crate::arrangement::manager::TraceBundle;
 use crate::compute_state::ComputeState;
 use crate::logging::compute::ComputeEvent;
 use crate::logging::compute::Logger;
@@ -141,135 +133,7 @@ pub mod sinks;
 mod threshold;
 mod top_k;
 
-/// Assemble the "compute"  side of a dataflow, i.e. all but the sources.
-///
-/// This method imports sources from provided assets, and then builds the remaining
-/// dataflow using "compute-local" assets like shared arrangements, and producing
-/// both arrangements and sinks.
-pub fn build_compute_dataflow<A: Allocate>(
-    timely_worker: &mut TimelyWorker<A>,
-    compute_state: &mut ComputeState,
-    dataflow: DataflowDescription<Plan, CollectionMetadata>,
-) {
-    // Mutually recursive view definitions require special handling.
-    let recursive = dataflow.objects_to_build.iter().any(|object| {
-        use mz_expr::CollectionPlan;
-        let mut depends_on = BTreeSet::new();
-        object.plan.depends_on_into(&mut depends_on);
-        depends_on.into_iter().any(|id| id >= object.id)
-    });
-    if recursive {
-        return iteration::build_compute_dataflow(timely_worker, compute_state, dataflow);
-    }
-
-    let worker_logging = timely_worker.log_register().get("timely");
-    let name = format!("Dataflow: {}", &dataflow.debug_name);
-
-    timely_worker.dataflow_core(&name, worker_logging, Box::new(()), |_, scope| {
-        // The scope.clone() occurs to allow import in the region.
-        // We build a region here to establish a pattern of a scope inside the dataflow,
-        // so that other similar uses (e.g. with iterative scopes) do not require weird
-        // alternate type signatures.
-        scope.clone().region_named(&name, |region| {
-            let mut context = crate::render::context::Context::for_dataflow(
-                &dataflow,
-                scope.addr().into_element(),
-            );
-            let mut tokens = BTreeMap::new();
-
-            // Import declared sources into the rendering context.
-            for (source_id, (source, _monotonic)) in dataflow.source_imports.iter() {
-                let mut mfp = source.arguments.operators.clone().map(|ops| {
-                    mz_expr::MfpPlan::create_from(ops)
-                        .expect("Linear operators should always be valid")
-                });
-
-                // Note: For correctness, we require that sources only emit times advanced by
-                // `dataflow.as_of`. `persist_source` is documented to provide this guarantee.
-                let (mut ok_stream, err_stream, token) = persist_source::persist_source(
-                    region,
-                    *source_id,
-                    Arc::clone(&compute_state.persist_clients),
-                    source.storage_metadata.clone(),
-                    dataflow.as_of.clone(),
-                    dataflow.until.clone(),
-                    mfp.as_mut(),
-                    // TODO: provide a more meaningful flow control input
-                    &timely::dataflow::operators::generic::operator::empty(region),
-                    NO_FLOW_CONTROL,
-                    // Copy the logic in DeltaJoin/Get/Join to start.
-                    |_timer, count| count > 1_000_000,
-                );
-
-                // If `mfp` is non-identity, we need to apply what remains.
-                // For the moment, assert that it is either trivial or `None`.
-                assert!(mfp.map(|x| x.is_identity()).unwrap_or(true));
-
-                // If logging is enabled, intercept frontier advancements coming from persist to track materialization lags.
-                // Note that we do this here instead of in the server.rs worker loop since we want to catch the wall-clock
-                // time of the frontier advancement for each dataflow as early as possible.
-                if let Some(logger) = compute_state.compute_logger.clone() {
-                    let export_ids = dataflow.export_ids().collect();
-                    ok_stream = intercept_source_instantiation_frontiers(
-                        &ok_stream, logger, *source_id, export_ids,
-                    );
-                }
-
-                // TODO(petrosagg): this is just wrapping an Arc<T> into an Rc<Arc<T>> to make the
-                // type checker happy. We should decide what we want our tokens to look like
-                let token: Rc<dyn Any> = Rc::new(token);
-
-                let (oks, errs) = (ok_stream.as_collection(), err_stream.as_collection());
-
-                // Associate collection bundle with the source identifier.
-                context.insert_id(
-                    mz_expr::Id::Global(*source_id),
-                    crate::render::CollectionBundle::from_collections(oks, errs),
-                );
-                // Associate returned tokens with the source identifier.
-                tokens.insert(*source_id, token);
-            }
-
-            // Import declared indexes into the rendering context.
-            for (idx_id, idx) in &dataflow.index_imports {
-                context.import_index(compute_state, &mut tokens, scope, region, *idx_id, &idx.0);
-            }
-
-            // We first determine indexes and sinks to export, then build the declared object, and
-            // finally export indexes and sinks. The reason for this is that we want to avoid
-            // cloning the dataflow plan for `build_object`, which can be expensive.
-
-            // Determine indexes to export
-            let indexes = dataflow
-                .index_exports
-                .iter()
-                .map(|(idx_id, (idx, _typ))| (*idx_id, dataflow.depends_on(idx.on_id), idx.clone()))
-                .collect::<Vec<_>>();
-
-            // Determine sinks to export
-            let sinks = dataflow
-                .sink_exports
-                .iter()
-                .map(|(sink_id, sink)| (*sink_id, dataflow.depends_on(sink.from), sink.clone()))
-                .collect::<Vec<_>>();
-
-            // Build declared objects.
-            for object in dataflow.objects_to_build {
-                context.build_object(region, object);
-            }
-
-            // Export declared indexes.
-            for (idx_id, imports, idx) in indexes {
-                context.export_index(compute_state, &mut tokens, imports, idx_id, &idx);
-            }
-
-            // Export declared sinks.
-            for (sink_id, imports, sink) in sinks {
-                context.export_sink(compute_state, &mut tokens, imports, sink_id, &sink);
-            }
-        });
-    })
-}
+pub use iteration::build_compute_dataflow;
 
 // This helper function adds an operator to track source instantiation frontier advancements
 // in a dataflow. The tracking supports instrospection sources populated by compute logging.
@@ -366,75 +230,6 @@ where
                 idx_id, self.dataflow_id
             );
         }
-    }
-}
-
-// This implementation block allows child timestamps to vary from parent timestamps.
-impl<G> Context<G, Row>
-where
-    G: Scope,
-    G::Timestamp: RenderTimestamp,
-{
-    pub(crate) fn build_object(&mut self, scope: &mut G, object: BuildDesc<Plan>) {
-        // First, transform the relation expression into a render plan.
-        let bundle = self.render_plan(object.plan, scope, scope.index());
-        self.insert_id(Id::Global(object.id), bundle);
-    }
-}
-
-// This implementation block requires the scopes have the same timestamp as the trace manager.
-// That makes some sense, because we are hoping to deposit an arrangement in the trace manager.
-impl<'g, G> Context<Child<'g, G, G::Timestamp>, Row, G::Timestamp>
-where
-    G: Scope<Timestamp = mz_repr::Timestamp>,
-{
-    pub(crate) fn export_index(
-        &mut self,
-        compute_state: &mut ComputeState,
-        tokens: &mut BTreeMap<GlobalId, Rc<dyn std::any::Any>>,
-        import_ids: BTreeSet<GlobalId>,
-        idx_id: GlobalId,
-        idx: &IndexDesc,
-    ) {
-        // put together tokens that belong to the export
-        let mut needed_tokens = Vec::new();
-        for import_id in import_ids {
-            if let Some(token) = tokens.get(&import_id) {
-                needed_tokens.push(Rc::clone(token));
-            }
-        }
-        let bundle = self.lookup_id(Id::Global(idx_id)).unwrap_or_else(|| {
-            panic!(
-                "Arrangement alarmingly absent! id: {:?}",
-                Id::Global(idx_id)
-            )
-        });
-        match bundle.arrangement(&idx.key) {
-            Some(ArrangementFlavor::Local(oks, errs)) => {
-                compute_state.traces.set(
-                    idx_id,
-                    TraceBundle::new(oks.trace, errs.trace).with_drop(needed_tokens),
-                );
-            }
-            Some(ArrangementFlavor::Trace(gid, _, _)) => {
-                // Duplicate of existing arrangement with id `gid`, so
-                // just create another handle to that arrangement.
-                let trace = compute_state.traces.get(&gid).unwrap().clone();
-                compute_state.traces.set(idx_id, trace);
-            }
-            None => {
-                println!("collection available: {:?}", bundle.collection.is_none());
-                println!(
-                    "keys available: {:?}",
-                    bundle.arranged.keys().collect::<Vec<_>>()
-                );
-                panic!(
-                    "Arrangement alarmingly absent! id: {:?}, keys: {:?}",
-                    Id::Global(idx_id),
-                    &idx.key
-                );
-            }
-        };
     }
 }
 
