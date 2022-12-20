@@ -172,6 +172,10 @@ impl<S: Append + 'static> Coordinator<S> {
             dataflow.set_as_of(since);
         }
 
+        for build in dataflow.objects_to_build.iter_mut() {
+            mz_transform::normalize_lets::normalize_lets(&mut build.plan.0).unwrap();
+        }
+
         mz_compute_client::plan::Plan::finalize_dataflow(dataflow)
             .expect("Dataflow planning failed; unrecoverable error")
     }
