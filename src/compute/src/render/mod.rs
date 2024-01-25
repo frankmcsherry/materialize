@@ -997,7 +997,13 @@ impl<T: Timestamp + Lattice + Columnation> RenderTimestamp for Product<mz_repr::
         Product::new(delay, Default::default())
     }
     fn step_back(&self) -> Self {
-        Product::new(self.outer.saturating_sub(1), self.inner.clone())
+        // TODO(mcsherry): the `T::minimum()` needs to exist as long as we must produce a single
+        // timestamp from each input timestamp. Ideally we would produce (or populate) an antichain,
+        // as this would allow us to be maximally precise.
+        // With the `T::minimum()` we will do a poor job at compacting WMR blocks within a time,
+        // which will manifest as a relatively higher WMR memory footprint for SELECT statements,
+        // and any other "WMR on non-changing data" scenarios that might eventually show up.
+        Product::new(self.outer.saturating_sub(1), T::minimum())
     }
 }
 
