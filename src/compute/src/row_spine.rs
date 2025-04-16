@@ -16,6 +16,10 @@ pub use self::spines::{
 };
 use differential_dataflow::trace::implementations::OffsetList;
 
+/// Enable per-column dictionary compression in row containers.
+pub static DICTIONARY_COMPRESSION: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 /// Spines specialized to contain `Row` types in keys and values.
 mod spines {
     use std::rc::Rc;
@@ -649,6 +653,7 @@ mod dictionary {
 
         use super::super::row_codec::{Codec, ColumnsCodec};
         use super::{DatumContainer, DatumSeq};
+        use crate::row_spine::DICTIONARY_COMPRESSION;
         use crate::row_spine::spines::{RowLayout, RowRowLayout, RowValLayout};
 
         pub struct RowRowBuilder<
@@ -680,24 +685,32 @@ mod dictionary {
                 chain: &mut Vec<Self::Input>,
                 description: Description<Self::Time>,
             ) -> Self::Output {
-                let mut key_codec = ColumnsCodec::default();
-                let mut val_codec = ColumnsCodec::default();
-                let mut vec = Vec::default();
-                let mut tot = 0;
-                for link in chain.iter() {
-                    for ((key, val), _, _) in link.iter() {
-                        use differential_dataflow::IntoOwned;
-                        if !key.is_empty() {
-                            key_codec.encode(<DatumSeq>::borrow_as(key).bytes_iter(), &mut vec);
-                            vec.clear();
+                let (key_codec, val_codec) = if DICTIONARY_COMPRESSION
+                    .load(std::sync::atomic::Ordering::Relaxed)
+                {
+                    let mut key_codec = ColumnsCodec::default();
+                    let mut val_codec = ColumnsCodec::default();
+                    let mut vec = Vec::default();
+                    for link in chain.iter() {
+                        for ((key, val), _, _) in link.iter() {
+                            use differential_dataflow::IntoOwned;
+                            if !key.is_empty() {
+                                key_codec.encode(<DatumSeq>::borrow_as(key).bytes_iter(), &mut vec);
+                                vec.clear();
+                            }
+                            if !val.is_empty() {
+                                val_codec.encode(<DatumSeq>::borrow_as(val).bytes_iter(), &mut vec);
+                                vec.clear();
+                            }
                         }
-                        if !val.is_empty() {
-                            val_codec.encode(<DatumSeq>::borrow_as(val).bytes_iter(), &mut vec);
-                            vec.clear();
-                        }
-                        tot += 1;
                     }
-                }
+                    (
+                        Some(ColumnsCodec::new_from([&key_codec])),
+                        Some(ColumnsCodec::new_from([&val_codec])),
+                    )
+                } else {
+                    (None, None)
+                };
 
                 use differential_dataflow::trace::implementations::BuilderInput;
 
@@ -706,17 +719,18 @@ mod dictionary {
                     DatumContainer,
                 >>::key_val_upd_counts(&chain[..]);
                 let mut builder = Self::with_capacity(keys, vals, upds);
-                builder.inner.result.keys.codec = ColumnsCodec::new_from([&key_codec]);
-                builder.inner.result.vals.codec = ColumnsCodec::new_from([&val_codec]);
+                if let Some(key_codec) = &key_codec {
+                    key_codec.report();
+                }
+                builder.inner.result.keys.codec = key_codec;
+                if let Some(val_codec) = &val_codec {
+                    val_codec.report();
+                }
+                builder.inner.result.vals.codec = val_codec;
+
                 for mut chunk in chain.drain(..) {
                     builder.push(&mut chunk);
                 }
-
-                if tot > 500000 {
-                    println!("Size: {:?}", tot);
-                }
-                builder.inner.result.keys.codec.report();
-                builder.inner.result.vals.codec.report();
 
                 builder.done(description)
             }
@@ -755,19 +769,23 @@ mod dictionary {
                 chain: &mut Vec<Self::Input>,
                 description: Description<Self::Time>,
             ) -> Self::Output {
-                let mut key_codec = ColumnsCodec::default();
-                let mut vec = Vec::default();
-                let mut tot = 0;
-                for link in chain.iter() {
-                    for ((key, _), _, _) in link.iter() {
-                        use differential_dataflow::IntoOwned;
-                        if !key.is_empty() {
-                            key_codec.encode(<DatumSeq>::borrow_as(key).bytes_iter(), &mut vec);
-                            vec.clear();
+                let key_codec = if DICTIONARY_COMPRESSION.load(std::sync::atomic::Ordering::Relaxed)
+                {
+                    let mut key_codec = ColumnsCodec::default();
+                    let mut vec = Vec::default();
+                    for link in chain.iter() {
+                        for ((key, _), _, _) in link.iter() {
+                            use differential_dataflow::IntoOwned;
+                            if !key.is_empty() {
+                                key_codec.encode(<DatumSeq>::borrow_as(key).bytes_iter(), &mut vec);
+                                vec.clear();
+                            }
                         }
-                        tot += 1;
                     }
-                }
+                    Some(ColumnsCodec::new_from([&key_codec]))
+                } else {
+                    None
+                };
 
                 use differential_dataflow::trace::implementations::BuilderInput;
 
@@ -776,15 +794,15 @@ mod dictionary {
                     TimelyStack<V>,
                 >>::key_val_upd_counts(&chain[..]);
                 let mut builder = Self::with_capacity(keys, vals, upds);
-                builder.inner.result.keys.codec = ColumnsCodec::new_from([&key_codec]);
+
+                if let Some(key_codec) = &key_codec {
+                    key_codec.report();
+                }
+                builder.inner.result.keys.codec = key_codec;
+
                 for mut chunk in chain.drain(..) {
                     builder.push(&mut chunk);
                 }
-
-                if tot > 500000 {
-                    println!("Size: {:?}", tot);
-                }
-                builder.inner.result.keys.codec.report();
 
                 builder.done(description)
             }
@@ -819,19 +837,23 @@ mod dictionary {
                 chain: &mut Vec<Self::Input>,
                 description: Description<Self::Time>,
             ) -> Self::Output {
-                let mut key_codec = ColumnsCodec::default();
-                let mut vec = Vec::default();
-                let mut tot = 0;
-                for link in chain.iter() {
-                    for ((key, _), _, _) in link.iter() {
-                        use differential_dataflow::IntoOwned;
-                        if !key.is_empty() {
-                            key_codec.encode(<DatumSeq>::borrow_as(key).bytes_iter(), &mut vec);
-                            vec.clear();
+                let key_codec = if DICTIONARY_COMPRESSION.load(std::sync::atomic::Ordering::Relaxed)
+                {
+                    let mut key_codec = ColumnsCodec::default();
+                    let mut vec = Vec::default();
+                    for link in chain.iter() {
+                        for ((key, _), _, _) in link.iter() {
+                            use differential_dataflow::IntoOwned;
+                            if !key.is_empty() {
+                                key_codec.encode(<DatumSeq>::borrow_as(key).bytes_iter(), &mut vec);
+                                vec.clear();
+                            }
                         }
-                        tot += 1;
                     }
-                }
+                    Some(ColumnsCodec::new_from([&key_codec]))
+                } else {
+                    None
+                };
 
                 use differential_dataflow::trace::implementations::BuilderInput;
 
@@ -840,15 +862,14 @@ mod dictionary {
                     TimelyStack<()>,
                 >>::key_val_upd_counts(&chain[..]);
                 let mut builder = Self::with_capacity(keys, vals, upds);
-                builder.inner.result.keys.codec = ColumnsCodec::new_from([&key_codec]);
+                if let Some(key_codec) = &key_codec {
+                    key_codec.report();
+                }
+                builder.inner.result.keys.codec = key_codec;
+
                 for mut chunk in chain.drain(..) {
                     builder.push(&mut chunk);
                 }
-
-                if tot > 500000 {
-                    println!("Size: {:?}", tot);
-                }
-                builder.inner.result.keys.codec.report();
 
                 builder.done(description)
             }
@@ -858,7 +879,7 @@ mod dictionary {
     // #[derive(Default)]
     pub struct DatumContainer {
         /// DictionaryCodec with encoder, decoder, and stastistics.
-        codec: ColumnsCodec,
+        codec: Option<ColumnsCodec>,
         /// A list of rows
         inner: super::bytes_container::BytesContainer,
         /// Staging buffer for ingested `Row` types.
@@ -870,26 +891,50 @@ mod dictionary {
         type ReadItem<'a> = DatumSeq<'a>;
 
         fn with_capacity(size: usize) -> Self {
+            let codec = if crate::row_spine::DICTIONARY_COMPRESSION
+                .load(std::sync::atomic::Ordering::Relaxed)
+            {
+                Some(Default::default())
+            } else {
+                None
+            };
+
             Self {
-                codec: Default::default(),
+                codec,
                 inner: BatchContainer::with_capacity(size),
                 staging: Vec::new(),
             }
         }
         fn merge_capacity(cont1: &Self, cont2: &Self) -> Self {
-            cont1.codec.report();
-            cont2.codec.report();
+            let codec = match (&cont1.codec, &cont2.codec) {
+                (Some(c1), Some(c2)) => {
+                    c1.report();
+                    c2.report();
+                    Some(ColumnsCodec::new_from([c1, c2]))
+                }
+                (None, None) => None,
+                _ => {
+                    panic!("Unclear codec configuration!")
+                }
+            };
 
             Self {
-                codec: ColumnsCodec::new_from([&cont1.codec, &cont2.codec]),
+                codec,
                 inner: BatchContainer::merge_capacity(&cont1.inner, &cont2.inner),
                 staging: Vec::new(),
             }
         }
         fn index(&self, index: usize) -> Self::ReadItem<'_> {
-            DatumSeq {
-                iter: self.codec.decode(self.inner.index(index)),
-            }
+            let data = self.inner.index(index);
+            let iter = if let Some(codec) = &self.codec {
+                codec.decode(data)
+            } else {
+                // Safety: without a codec we only push rows or datumseqs into `self.inner`.
+                // Each retrieved byte slice should be row-encoded data, as long as we have
+                // not unset the codec in the interim.
+                unsafe { ColumnsIter::without_codec(data) }
+            };
+            DatumSeq { iter }
         }
         fn len(&self) -> usize {
             self.inner.len()
@@ -924,10 +969,16 @@ mod dictionary {
 
     impl PushInto<DatumSeq<'_>> for DatumContainer {
         fn push_into(&mut self, item: DatumSeq<'_>) {
-            self.staging.clear();
-            self.codec.encode(item.bytes_iter(), &mut self.staging);
+            if let Some(codec) = &mut self.codec {
+                codec.encode(item.bytes_iter(), &mut self.staging);
+            } else {
+                for slice in item.bytes_iter() {
+                    self.staging.extend_from_slice(slice);
+                }
+            }
             // TODO: Copy rather than clone, into better storage.
             self.inner.push(&self.staging[..]);
+            self.staging.clear();
         }
     }
 
@@ -1146,7 +1197,6 @@ mod row_codec {
             pub index: Option<&'a ColumnsCodec>,
             pub column: usize,
             pub data: &'a [u8],
-            // pub offset: usize,
         }
 
         impl<'a> Iterator for ColumnsIter<'a> {
@@ -1173,6 +1223,19 @@ mod row_codec {
                     self.data = next;
                     self.column += 1;
                     Some(prev)
+                }
+            }
+        }
+
+        impl<'a> ColumnsIter<'a> {
+            /// Create a column iterator without a codec.
+            ///
+            /// This requires the data to be row-formatted, and it will be erroneous otherwise.
+            pub unsafe fn without_codec(data: &'a [u8]) -> Self {
+                Self {
+                    index: None,
+                    column: 0,
+                    data,
                 }
             }
         }
