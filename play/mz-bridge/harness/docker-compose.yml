@@ -1,0 +1,38 @@
+# Self-contained demo stack for mz-bridge.
+#
+# Brings up the Materialize emulator (the SOURCE) and a vanilla Postgres (the
+# downstream SINK). Run this from a host with a working Docker daemon — e.g. the
+# OrbStack host, or any normal Linux/macOS machine. (Nested Docker inside an
+# OrbStack Linux VM currently fails to start the emulator: the VM kernel blocks
+# the cgroup-device bpf() setup that runc needs.)
+#
+#   docker compose -f harness/docker-compose.yml up -d
+#   psql postgres://materialize@localhost:6875/materialize -f harness/setup.sql
+#   npm run dev                 # with config.json -> mz 6875, pg 5432
+#   psql postgres://materialize@localhost:6875/materialize -f harness/changes.sql
+
+services:
+  materialized:
+    image: materialize/materialized:v26.25.0
+    # Console on 6874, SQL on 6875.
+    ports:
+      - "127.0.0.1:6874:6874"
+      - "127.0.0.1:6875:6875"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6878/api/readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  downstream:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 30

@@ -1,0 +1,13 @@
+{
+  "_comment": "Example of a SECOND, independent bridge: different bridgeId and different target tables, so it runs concurrently with config.example.json against the same Materialize views without contention. Ports match harness/docker-compose.yml.",
+  "mzConn": "postgres://materialize@localhost:6875/materialize",
+  "pgConn": "postgres://postgres:postgres@localhost:5432/postgres",
+  "bridgeId": "demo_b",
+  "retainHistory": "1h",
+  "fetchBatch": 1000,
+  "views": [
+    { "view": "mv_accounts", "target": "mv_accounts_b" },
+    { "view": "mv_names", "target": "mv_names_b" },
+    { "view": "mv_balances", "target": "mv_balances_b" }
+  ]
+}
