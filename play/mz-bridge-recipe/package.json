@@ -1,0 +1,23 @@
+{
+  "name": "mz-bridge-recipe",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Reference recipe: consume a cohort of Materialize SUBSCRIBEs as one consistent stream, with a single upcall per consistent moment",
+  "type": "commonjs",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "sim": "tsx test/sim.ts"
+  },
+  "dependencies": {
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/pg": "^8.11.10",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}

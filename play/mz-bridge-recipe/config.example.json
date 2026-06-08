@@ -1,0 +1,5 @@
+{
+  "mzConn": "postgres://materialize@localhost:6875/materialize",
+  "views": ["mv_accounts", "mv_names", "mv_balances"],
+  "fetchBatch": 1000
+}
