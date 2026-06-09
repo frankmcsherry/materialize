@@ -80,8 +80,10 @@ are fully decoupled from the upcall (and from each other). A separate,
 **serialized** commit pump notices when `F` advances, slices the batch, and
 `await`s the upcall before offering the next one — purely so the consumer's
 commit notifications are **ordered and non-overlapping**, *not* to throttle the
-drain. A slow consumer grows the cohort's in-memory buffers; under sustained lag
-the bridge falls over (OOM, or a configured bound that fails loudly). MZ keeps
+drain. A slow consumer grows the cohort's in-memory buffers without bound; under
+sustained lag the bridge eventually OOMs — by design, the bridge is the thing
+that falls over, never Materialize. (A production version would add a bound that
+fails loudly; this recipe keeps the buffer logic deliberately minimal.) MZ keeps
 being consumed throughout.
 
 So the upcall's whole role is: **communicate one atomic, cross-subscribe,
@@ -105,10 +107,14 @@ The verbs split into two classes:
   (SNAPSHOT = FALSE)`.
 - `cohort.add(view) -> handle` — join a brand-new view to an **already-live**
   cohort: `AS OF F_C WITH (SNAPSHOT = TRUE)`, where `F_C` is the cohort's current
-  consistency frontier. Its first progress then lands exactly at `F_C`, so it
-  neither regresses the cohort nor leaves a gap. (For the initial set, use the
-  constructor — that avoids racing a member onto a cohort that has begun
-  emitting. `add` deliberately throws if the cohort is not live yet.)
+  consistency frontier. Its first progress lands exactly at `F_C`, so `F` never
+  winds backward and no gap opens. It does, however, **stall the cohort**: until
+  the joiner's stream catches up from `F_C` to the current commit point, the
+  cohort's `min(frontier)` is pinned to the newcomer and no upcall fires. That
+  pause — not a regression, just a wait — is the cost of adding a member live;
+  `F` resumes advancing forward once the joiner is caught up. (For the initial
+  set, use the constructor — that avoids racing a member onto a cohort that has
+  begun emitting. `add` deliberately throws if the cohort is not live yet.)
 - `cohort.drop(handle)` — stop and remove a member; its undelivered buffer is
   discarded and `min` may jump.
 
@@ -116,10 +122,17 @@ The verbs split into two classes:
 
 - `cohort.merge(other)` — absorb `other`'s members; from here the union is one
   consistency unit governed by **this** cohort's upcall. The merged commit point
-  is `max(committedF)` of the two, so the governing upcall sees monotonic `F`
-  and no buffered data is lost (the lagging half's backlog flushes once it
-  catches up). Each half's *pre-merge* history stays with its old upcall, so for
-  a clean handoff point both upcalls at the same store, or make apply idempotent.
+  is `max(committedF)` of the two, and `F` stays monotone — but the union is
+  **not yet consistent at that `F`**. The lagging half hasn't reached it, so its
+  buffered changes (at timestamps *below* the merged commit point) are still
+  pending; the cohort stalls until that half catches up, and the **first
+  post-merge upcall** is the one that flushes the backlog and reconciles the
+  union to a consistent cut. **Do not report consistency onward until that upcall
+  completes** — between `merge` and it, the merged view is inconsistent. Because
+  that first batch can carry changes timestamped below an `F` you already
+  committed for *this* half, a merge **requires** idempotent, order-insensitive
+  apply (point both halves' upcalls at the same store). Each half's *pre-merge*
+  history stayed with its old upcall.
 - `cohort.split(handles, upcall) -> child` — move some members into a new cohort
   with its own upcall; this cohort keeps the rest. The child inherits this
   cohort's commit point, so it continues cleanly. Use it to **decouple a slow

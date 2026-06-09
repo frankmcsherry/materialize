@@ -60,6 +60,7 @@ export class Cohort {
   private committedF: bigint;
   private pumping = false;
   private failReject!: (e: unknown) => void;
+  private settled = false;
 
   /**
    * Rejects on the first stream or upcall error (e.g. an `AS OF` below the
@@ -102,6 +103,17 @@ export class Cohort {
     this.failed = new Promise<void>((_res, rej) => {
       this.failReject = rej;
     });
+  }
+
+  /**
+   * Fail the cohort loudly, exactly once. Both a dying stream and a throwing
+   * upcall can race here; the first wins and the rest are no-ops (the `failed`
+   * promise can only settle once anyway — this just keeps intent explicit).
+   */
+  private fail(e: unknown): void {
+    if (this.settled) return;
+    this.settled = true;
+    this.failReject(e);
   }
 
   /**
@@ -173,9 +185,12 @@ export class Cohort {
    * Add a brand-new view to an already-live cohort (the "join" case). It
    * subscribes `AS OF F_C WITH (SNAPSHOT = TRUE)`, where F_C is the cohort's
    * current consistency frontier: its first progress then lands exactly at F_C,
-   * so it neither regresses the cohort nor leaves a gap. For the initial set of
-   * views, pass them to fresh()/resuming() instead — that avoids racing a member
-   * onto a cohort that has already begun emitting.
+   * so F never winds backward and no gap opens. The cohort does STALL until the
+   * joiner catches up from F_C to the current commit point — while it is behind,
+   * minFrontier() is pinned to it (returns null until its first progress) and no
+   * upcall fires — but F only ever resumes forward, never regresses. For the
+   * initial set of views, pass them to fresh()/resuming() instead — that avoids
+   * racing a member onto a cohort that has already begun emitting.
    */
   add(view: string): SubscriptionHandle {
     const fC = this.minFrontier();
@@ -205,10 +220,16 @@ export class Cohort {
    * SUBSCRIBE is re-issued.
    *
    * The merged commit point is max(committedF) of the two, so the governing
-   * upcall sees monotonic F and no buffered data is lost (the lagging half's
-   * backlog flushes once its frontier passes the merge point). Each half's
-   * *pre-merge* history stayed with its old upcall; for a clean handoff, point
-   * both upcalls at the same store, or make your apply idempotent. See DESIGN.md.
+   * upcall sees a monotone F. But the union is NOT yet consistent at that F: the
+   * lagging half has buffered changes at timestamps below it that are still
+   * pending. The cohort stalls until that half catches up, and the first
+   * post-merge upcall flushes the backlog and reconciles the union to a
+   * consistent cut. Until that upcall completes the merged view is inconsistent,
+   * so the consumer must not report consistency onward before it. That first
+   * batch can also carry changes below an F already committed for THIS half, so
+   * merge requires idempotent, order-insensitive apply (point both halves'
+   * upcalls at the same store). Each half's pre-merge history stayed with its old
+   * upcall. See DESIGN.md.
    */
   merge(other: Cohort): void {
     if (other === this) return;
@@ -275,7 +296,7 @@ export class Cohort {
     // A stream that dies (e.g. AS OF below the RETAIN HISTORY window) rejects
     // `failed`, so the consumer fails loudly rather than acting on a partial
     // consistent moment.
-    sub.done.catch((e) => this.failReject(e));
+    sub.done.catch((e) => this.fail(e));
     return sub;
   }
 
@@ -310,7 +331,7 @@ export class Cohort {
         this.dropThrough(F);
       }
     } catch (e) {
-      this.failReject(e); // the upcall threw — surface it loudly
+      this.fail(e); // the upcall threw — surface it loudly
     } finally {
       this.pumping = false;
     }

@@ -200,32 +200,97 @@ async function main(): Promise<void> {
     assert.equal(moments[moments.length - 1].F, 20n); // a advanced alone
   });
 
-  await test("merge takes the higher commit point; backlog flushes to the new upcall", async () => {
-    const { subs, factory } = fakeWorld();
-    const { moments: m1, upcall: u1 } = recorder();
-    const { upcall: u2 } = recorder();
-    const c1 = await Cohort.resuming("", ["a"], 0n, u1, { factory });
-    const c2 = await Cohort.resuming("", ["b"], 0n, u2, { factory });
-    const a = subs.get("a")!;
-    const b = subs.get("b")!;
-    a.schema(["x"]);
-    b.schema(["x"]);
-    a.progress(20n); // c1 advances to 20 alone (idle)
-    await settle();
+  await test(
+    "merge: inconsistent until the first post-merge upcall flushes the lagging half",
+    async () => {
+      const { subs, factory } = fakeWorld();
+      const { moments: m1, upcall: u1 } = recorder();
+      const { upcall: u2 } = recorder();
+      const c1 = await Cohort.resuming("", ["a"], 0n, u1, { factory });
+      const c2 = await Cohort.resuming("", ["b"], 0n, u2, { factory });
+      const a = subs.get("a")!;
+      const b = subs.get("b")!;
+      a.schema(["x"]);
+      b.schema(["x"]);
+      a.progress(20n); // c1 advances to 20 alone (idle)
+      await settle();
+      const before = m1.length;
 
-    c1.merge(c2); // committedF = max(20, 0) = 20; union governed by u1
-    b.data(5n, 1n, ["b5"]); // b's pre-merge backlog
-    a.progress(30n);
-    b.progress(25n); // min(30, 25) = 25 > 20 -> release ts < 25 (b5)
-    await settle();
+      // Merge: committedF = max(20, 0) = 20, union governed by u1. But b is the
+      // lagging half (still at 0), so the union is NOT consistent at 20 yet. No
+      // upcall fires until b catches PAST the commit point — the window during
+      // which the consumer must NOT report consistency onward.
+      c1.merge(c2);
+      b.data(5n, 1n, ["b5"]); // b's pre-merge backlog, timestamped BELOW committedF=20
+      a.progress(30n);
+      b.progress(20n); // min = 20, not > committedF -> still no upcall
+      await settle();
+      assert.equal(m1.length, before, "no upcall while the merged view is inconsistent");
 
-    assert.deepEqual(c1.views().sort(), ["a", "b"]);
-    assert.deepEqual(c2.views(), []);
-    const last = m1[m1.length - 1];
-    assert.equal(last.F, 25n);
-    const bv = last.batch.find((v) => v.view === "b");
-    assert.equal(bv!.rows[0].values[0], "b5");
-  });
+      // b moves past the commit point: the first post-merge upcall reconciles the
+      // union and flushes b's backlog. Note b5 is timestamped 5 — BELOW the F=20
+      // already committed for the 'a' half — yet it is delivered now. F stays
+      // monotone (20 -> 25); the *data* arrives behind a prior frontier, which is
+      // exactly why merge requires idempotent, order-insensitive apply.
+      b.progress(25n); // min(30, 25) = 25 > 20 -> release ts < 25 (b5)
+      await settle();
+
+      assert.deepEqual(c1.views().sort(), ["a", "b"]);
+      assert.deepEqual(c2.views(), []);
+      const last = m1[m1.length - 1];
+      assert.equal(last.F, 25n);
+      const bv = last.batch.find((v) => v.view === "b");
+      assert.equal(bv!.rows[0].values[0], "b5");
+    },
+  );
+
+  await test(
+    "add: joins AS OF F_C/SNAPSHOT true and stalls (never regresses) until the joiner catches up",
+    async () => {
+      const { subs, factory } = fakeWorld();
+      const { moments, upcall } = recorder();
+      const cohort = await Cohort.resuming("", ["a"], 0n, upcall, { factory });
+      const a = subs.get("a")!;
+      a.schema(["x"]);
+      a.data(1n, 1n, ["a1"]);
+      a.progress(10n); // F = 10 fires; committedF = 10
+      await settle();
+      assert.equal(moments.length, 1);
+      assert.equal(moments[0].F, 10n);
+
+      // Join 'b' live: subscribes AS OF F_C (= 10) WITH SNAPSHOT = TRUE.
+      const handle = cohort.add("b");
+      const b = subs.get("b")!;
+      assert.equal(handle.view, "b");
+      assert.equal(b.asOf, 10n); // F_C
+      assert.equal(b.snapshot, true);
+      b.schema(["x"]);
+
+      // STALL: 'a' races ahead, but until 'b' produces a progress the cohort's
+      // min(frontier) is undefined, so no upcall fires. F does not wind back.
+      a.progress(20n);
+      await settle();
+      assert.equal(moments.length, 1, "cohort stalls on the joiner; no new upcall");
+
+      // 'b' lands its snapshot at F_C and a first progress AT the commit point:
+      // min = 10, not > committedF, so still no upcall (at the point, not past).
+      b.data(10n, 1n, ["b-snap"]);
+      b.progress(10n);
+      await settle();
+      assert.equal(moments.length, 1, "still stalled: joiner only at the commit point");
+
+      // 'b' moves past the commit point: the cohort resumes, advancing forward
+      // (10 -> 15) — never below where it already was.
+      b.progress(15n);
+      await settle();
+      assert.equal(moments.length, 2);
+      const last = moments[1];
+      assert.equal(last.F, 15n);
+      assert.ok(last.F > moments[0].F, "F advanced forward, never regressed");
+      const bv = last.batch.find((v) => v.view === "b");
+      assert.equal(bv!.rows[0].values[0], "b-snap");
+    },
+  );
 
   await test("released buffers are dropped (re-SUBSCRIBE is the recovery path)", async () => {
     const { subs, factory } = fakeWorld();

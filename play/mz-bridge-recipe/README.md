@@ -5,10 +5,10 @@ streams as one consistent stream. There is no downstream — the bridge's only
 output is **one upcall per consistent moment**. The default upcall writes a line
 to the console; you replace it with your own logic.
 
-> If you want a worked end-to-end sink (Postgres mirror, exactly-once via a
-> checkpoint), see the sibling `play/mz-bridge`. This project is the part *before*
-> the sink: the mechanism for turning N subscriptions into one consistent,
-> resumable stream. Read **`DESIGN.md`** for the full argument.
+> This project is the part *before* the sink: the mechanism for turning N
+> subscriptions into one consistent, resumable stream. There is intentionally no
+> worked downstream (Postgres mirror, Kafka, exactly-once checkpoint) — that part
+> is yours, plugged in at the upcall. Read **`DESIGN.md`** for the full argument.
 
 ## The idea in one screen
 
