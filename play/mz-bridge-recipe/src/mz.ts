@@ -24,8 +24,8 @@ export interface SubscriptionSink {
 }
 
 /**
- * The cohort only ever holds a stream through this handle. `Subscription`
- * implements it; tests can supply a fake (see `SubscriptionFactory`).
+ * The cohort only ever holds a stream through this handle, which `Subscription`
+ * implements.
  */
 export interface SubscriptionHandle {
   readonly view: string;
@@ -35,16 +35,6 @@ export interface SubscriptionHandle {
   sink: SubscriptionSink;
   stop(): void;
 }
-
-/** How a cohort creates streams. Defaults to a real `Subscription`. */
-export type SubscriptionFactory = (
-  conn: string,
-  view: string,
-  asOf: bigint,
-  snapshot: boolean,
-  sink: SubscriptionSink,
-  fetchBatch: number,
-) => SubscriptionHandle;
 
 /** What a `FETCH ...` returns in array row-mode. */
 interface FetchResult {
@@ -144,16 +134,6 @@ export class Subscription implements SubscriptionHandle {
     }
   }
 }
-
-/** The default factory: a real Subscription against a live Materialize. */
-export const realSubscriptionFactory: SubscriptionFactory = (
-  conn,
-  view,
-  asOf,
-  snapshot,
-  sink,
-  fetchBatch,
-) => new Subscription(conn, view, asOf, snapshot, sink, fetchBatch);
 
 /** Read the current logical time, for a fresh cohort's shared `AS OF`. */
 export async function readMzNow(conn: string): Promise<bigint> {

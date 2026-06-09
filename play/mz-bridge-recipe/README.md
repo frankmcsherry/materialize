@@ -48,12 +48,12 @@ That's the whole surface. Everything else is the three idioms it encodes.
 
 ```
 src/types.ts         bigint helpers, content key, resumeAsOf (the durability rule)
-src/mz.ts            Subscription: one managed SUBSCRIBE (+ a factory seam for tests)
+src/mz.ts            Subscription: one managed SUBSCRIBE (+ readMzNow)
 src/cohort.ts        the wrapper: min-frontier engine, serialized pump, lifecycle verbs
 src/console-sink.ts  the default upcall (the seam you replace)
 src/index.ts         demo over three views; `--from <F>` to resume
-test/sim.ts          the idioms as assertions, driven by a fake source (no live MZ)
 harness/             setup.sql (3 MVs) + changes.sql
+RUNNING.md           validate the recipe against a live Materialize (Docker)
 ```
 
 ## Run
@@ -61,26 +61,18 @@ harness/             setup.sql (3 MVs) + changes.sql
 ```bash
 cd play/mz-bridge-recipe
 npm install
-
-# the idioms, verified with no Materialize running:
-npm run sim
-
-# typecheck everything (src + test):
-npm run typecheck
+npm run typecheck     # type-check the recipe
 ```
 
-Against a live Materialize (pgwire on `:6875`):
+To see it actually work, **`RUNNING.md`** walks through bringing up Materialize
+in Docker, loading the harness, running the bridge, driving changes, and
+resuming — with the consistent-moment output you should expect. The short
+version, once MZ is up and `harness/setup.sql` is loaded:
 
 ```bash
 cp config.example.json config.json
-psql "postgres://materialize@localhost:6875/materialize" -f harness/setup.sql
-
-npm run dev                       # fresh: snapshot every view, then stream
-# in another shell, drive changes and watch consistent moments print:
-psql "postgres://materialize@localhost:6875/materialize" -f harness/changes.sql
-
-# resume from a frontier you saw printed (in a real app this comes from YOUR store):
-npm run dev -- config.json --from <F>
+npm run dev                              # fresh: snapshot every view, then stream
+npm run dev -- config.json --from <F>    # resume from a recorded F
 ```
 
 ## What you owe (non-goals)

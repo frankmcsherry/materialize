@@ -201,14 +201,14 @@ a valid timestamp"* rather than diverging silently — re-snapshot by hand.
 
 ```
 src/types.ts         bigint helpers, content key, batch types, resumeAsOf (the rule)
-src/mz.ts            Subscription (managed SUBSCRIBE) + readMzNow + factory seam
+src/mz.ts            Subscription (managed SUBSCRIBE) + readMzNow
 src/cohort.ts        the wrapper: min-frontier engine, serialized pump, lifecycle verbs
 src/console-sink.ts  the default upcall (the "write to console" placeholder seam)
 src/config.ts        tiny config (mzConn + view list)
 src/index.ts         demo: a fresh/resuming cohort over three views
-test/sim.ts          drives the engine with a fake source (no live MZ): the idioms as assertions
 harness/setup.sql    a table + three MVs (keyed set, multiset, aggregate) with RETAIN HISTORY
 harness/changes.sql  some changes to watch flow through
+RUNNING.md           validate the recipe against a live Materialize (Docker)
 ```
 
 ## What the consumer owns (non-goals here)

@@ -1,8 +1,7 @@
 import {
   type SubscriptionHandle,
   type SubscriptionSink,
-  type SubscriptionFactory,
-  realSubscriptionFactory,
+  Subscription,
   readMzNow,
 } from "./mz";
 import {
@@ -27,8 +26,6 @@ export type Upcall = (F: bigint, batch: CohortBatch) => void | Promise<void>;
 export interface CohortOptions {
   /** Rows per FETCH. Larger = fewer round trips, more memory. */
   fetchBatch?: number;
-  /** Inject a fake stream source for testing; defaults to a real Subscription. */
-  factory?: SubscriptionFactory;
 }
 
 interface Member {
@@ -97,7 +94,6 @@ export class Cohort {
     private readonly upcall: Upcall,
     committedF: bigint,
     private readonly fetchBatch: number,
-    private readonly factory: SubscriptionFactory,
   ) {
     this.committedF = committedF;
     this.failed = new Promise<void>((_res, rej) => {
@@ -130,13 +126,7 @@ export class Cohort {
     const asOf = await readMzNow(conn);
     // committedF = asOf (= T0): the snapshot is emitted *at* T0, so it is
     // released as soon as the frontier first advances past T0.
-    const c = new Cohort(
-      conn,
-      upcall,
-      asOf,
-      opts.fetchBatch ?? 1000,
-      opts.factory ?? realSubscriptionFactory,
-    );
+    const c = new Cohort(conn, upcall, asOf, opts.fetchBatch ?? 1000);
     for (const view of views) c.startMember(view, asOf, true);
     return c;
   }
@@ -158,13 +148,7 @@ export class Cohort {
     const asOf = resumeAsOf(from);
     // committedF = from: everything < from is already durable, so the first
     // released batch covers [from, nextF).
-    const c = new Cohort(
-      conn,
-      upcall,
-      from,
-      opts.fetchBatch ?? 1000,
-      opts.factory ?? realSubscriptionFactory,
-    );
+    const c = new Cohort(conn, upcall, from, opts.fetchBatch ?? 1000);
     for (const view of views) c.startMember(view, asOf, false);
     return c;
   }
@@ -251,13 +235,7 @@ export class Cohort {
    * durable without waiting on it.
    */
   split(subs: SubscriptionHandle[], upcall: Upcall): Cohort {
-    const child = new Cohort(
-      this.conn,
-      upcall,
-      this.committedF,
-      this.fetchBatch,
-      this.factory,
-    );
+    const child = new Cohort(this.conn, upcall, this.committedF, this.fetchBatch);
     for (const sub of subs) {
       const m = this.members.get(sub.view);
       if (!m) throw new Error(`split(): '${sub.view}' is not a member`);
@@ -284,7 +262,7 @@ export class Cohort {
       buffer: [],
     };
     this.members.set(view, member);
-    const sub = this.factory(
+    const sub = new Subscription(
       this.conn,
       view,
       asOf,
