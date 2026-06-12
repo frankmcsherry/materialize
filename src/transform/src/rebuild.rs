@@ -18,6 +18,7 @@
 //! journal, capability map, and scorecard.
 
 pub mod env;
+pub mod filter_split;
 
 use mz_expr::MirRelationExpr;
 
@@ -55,7 +56,9 @@ impl crate::Transform for RebuildLogical {
             MirRelationExpr::constant(vec![], mz_repr::ReprRelationType::new(vec![])),
         ))?;
 
-        // Transform sequence over `env` goes here as transforms are earned.
+        // The transform sequence; each entry earned against the scorecard.
+        let mut env = env;
+        filter_split::apply(&mut env);
 
         *relation = env.into_expr();
         mz_repr::explain::trace_plan(&*relation);

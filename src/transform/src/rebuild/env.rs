@@ -79,29 +79,28 @@ impl BindingEnv {
     }
 
     /// Verifies no `Let` occurs within any binding body or the root,
-    /// excluding the interiors of (opaque) `LetRec` scopes.
+    /// excluding the interiors of (opaque) `LetRec` scopes, where `Let`s at
+    /// scope roots are legitimate normal form.
     fn assert_let_free(&self) -> Result<(), TransformError> {
-        let mut ok = true;
-        let mut check = |e: &MirRelationExpr| {
-            // Do not descend into LetRec interiors: they are opaque here.
-            if let MirRelationExpr::LetRec { .. } = e {
-                return;
+        let mut todo: Vec<&MirRelationExpr> = self
+            .bindings
+            .iter()
+            .map(|(_id, body)| body)
+            .chain(std::iter::once(&self.root))
+            .collect();
+        while let Some(e) = todo.pop() {
+            match e {
+                // Opaque in Phase 1: do not descend.
+                MirRelationExpr::LetRec { .. } => {}
+                MirRelationExpr::Let { .. } => {
+                    return Err(TransformError::Internal(
+                        "BindingEnv: input was not in Let normal form".to_string(),
+                    ));
+                }
+                other => todo.extend(other.children()),
             }
-            if let MirRelationExpr::Let { .. } = e {
-                ok = false;
-            }
-        };
-        for (_id, body) in &self.bindings {
-            body.visit_pre(&mut check);
         }
-        self.root.visit_pre(&mut check);
-        if ok {
-            Ok(())
-        } else {
-            Err(TransformError::Internal(
-                "BindingEnv: input was not in Let normal form".to_string(),
-            ))
-        }
+        Ok(())
     }
 }
 
