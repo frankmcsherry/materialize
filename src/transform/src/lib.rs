@@ -88,6 +88,7 @@ pub mod normalize_ops;
 pub mod notice;
 pub mod ordering;
 pub mod predicate_pushdown;
+pub mod rebuild;
 pub mod reduce_elision;
 pub mod reduce_reduction;
 pub mod reduction_pushdown;
@@ -750,6 +751,22 @@ impl Optimizer {
     /// Builds a logical optimizer that only performs logical transformations.
     #[deprecated = "Create an Optimize instance and call `optimize` instead."]
     pub fn logical_optimizer(ctx: &mut TransformCtx) -> Self {
+        // Experimental from-scratch rebuild of this pipeline; see
+        // src/transform/src/rebuild.rs and play/optimizer-rebuild/.
+        if std::env::var("MZ_OPTIMIZER_REBUILD").as_deref() == Ok("logical") {
+            let transforms: Vec<Box<dyn Transform>> = transforms![
+                Box::new(Typecheck::new(ctx.typechecking_context()).strict_join_equivalences()),
+                Box::new(rebuild::RebuildLogical),
+                // Phase 1: permissive end-check; the existing pipeline's
+                // disallow_new_globals + strict equivalences checks return
+                // once the rebuild establishes those properties.
+                Box::new(Typecheck::new(ctx.typechecking_context())),
+            ];
+            return Self {
+                name: "logical_rebuild",
+                transforms,
+            };
+        }
         let transforms: Vec<Box<dyn Transform>> = transforms![
             // 0. `Transform`s that don't actually change the plan.
             Box::new(Typecheck::new(ctx.typechecking_context()).strict_join_equivalences()),
