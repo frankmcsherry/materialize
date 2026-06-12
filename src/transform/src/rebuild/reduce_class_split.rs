@@ -116,7 +116,6 @@ fn apply_expr(expr: &mut MirRelationExpr) {
 #[cfg(test)]
 mod tests {
     use mz_compute_types::plan::reduce::reduction_type;
-    use mz_expr::visit::Visit;
     use mz_expr::{AggregateExpr, AggregateFunc, MirRelationExpr, MirScalarExpr};
     use mz_repr::{ReprRelationType, ReprScalarType};
 

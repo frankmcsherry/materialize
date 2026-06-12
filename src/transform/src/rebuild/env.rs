@@ -18,7 +18,6 @@
 //! the obligation to flatten them, justified by their synchronous-update
 //! semantics making names position-independent).
 
-use mz_expr::visit::Visit;
 use mz_expr::{LocalId, MirRelationExpr};
 
 use crate::TransformError;

@@ -19,6 +19,8 @@
 
 pub mod env;
 pub mod filter_split;
+pub mod linear_fuse;
+pub mod predicate_placement;
 pub mod reduce_class_split;
 
 use mz_expr::MirRelationExpr;
@@ -59,7 +61,9 @@ impl crate::Transform for RebuildLogical {
 
         // The transform sequence; each entry earned against the scorecard.
         let mut env = env;
+        linear_fuse::apply(&mut env);
         filter_split::apply(&mut env);
+        predicate_placement::apply(&mut env);
         reduce_class_split::apply(&mut env);
 
         *relation = env.into_expr();
