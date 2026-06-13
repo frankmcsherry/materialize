@@ -24,6 +24,8 @@ pub mod linear_fuse;
 pub mod predicate_placement;
 pub mod projection_thinning;
 pub mod reduce_class_split;
+pub mod reduce_elision;
+pub mod union_cancel;
 
 use mz_expr::MirRelationExpr;
 
@@ -67,6 +69,8 @@ impl crate::Transform for RebuildLogical {
         filter_split::apply(&mut env);
         join_flatten::apply(&mut env);
         predicate_placement::apply(&mut env);
+        reduce_elision::apply(&mut env);
+        union_cancel::apply(&mut env);
         projection_thinning::apply(&mut env);
         linear_fuse::apply(&mut env);
         reduce_class_split::apply(&mut env);
