@@ -177,7 +177,7 @@ fn deposit(expr: &mut MirRelationExpr, conjuncts: Vec<MirScalarExpr>) {
 }
 
 /// Rewrites every column reference in `e` via `f`.
-fn remap_columns<F: Fn(usize) -> usize>(e: &mut MirScalarExpr, f: F) {
+pub(crate) fn remap_columns<F: Fn(usize) -> usize>(e: &mut MirScalarExpr, f: F) {
     e.visit_mut_post(&mut |node| {
         if let MirScalarExpr::Column(c, _) = node {
             *c = f(*c);

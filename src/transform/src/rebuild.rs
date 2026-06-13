@@ -19,6 +19,7 @@
 
 pub mod env;
 pub mod filter_split;
+pub mod join_flatten;
 pub mod linear_fuse;
 pub mod predicate_placement;
 pub mod reduce_class_split;
@@ -63,6 +64,7 @@ impl crate::Transform for RebuildLogical {
         let mut env = env;
         linear_fuse::apply(&mut env);
         filter_split::apply(&mut env);
+        join_flatten::apply(&mut env);
         predicate_placement::apply(&mut env);
         reduce_class_split::apply(&mut env);
 
