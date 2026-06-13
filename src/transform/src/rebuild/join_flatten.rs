@@ -240,7 +240,7 @@ fn emit(region: Region, units: &std::collections::BTreeSet<mz_expr::LocalId>) ->
         mut equivalences,
         mut residue,
         outputs,
-        flat_arity,
+        flat_arity: _,
     } = region;
     // Partition inputs: single-row constants become per-column literal
     // substitutions; the rest are kept, their columns compacted.
@@ -333,6 +333,29 @@ fn emit(region: Region, units: &std::collections::BTreeSet<mz_expr::LocalId>) ->
         .map(|input| input.typ().column_types)
         .collect();
     mz_expr::canonicalize::canonicalize_equivalences(&mut equivalences, input_types.iter());
+    // Columns in one equivalence class are datum-equal on every surviving
+    // row, so the region's visible columns can all reference the class
+    // representative (least column); thinning then drops the duplicates
+    // from the join, and the region's Project re-duplicates above it —
+    // arrangements store one copy.
+    let mut representative: std::collections::BTreeMap<usize, usize> = Default::default();
+    for class in equivalences.iter() {
+        let mut cols: Vec<usize> = class
+            .iter()
+            .filter_map(|m| match m {
+                MirScalarExpr::Column(c, _) => Some(*c),
+                _ => None,
+            })
+            .collect();
+        cols.sort();
+        for c in cols.iter().skip(1) {
+            representative.insert(*c, cols[0]);
+        }
+    }
+    let outputs: Vec<usize> = outputs
+        .iter()
+        .map(|o| representative.get(o).copied().unwrap_or(*o))
+        .collect();
     let flat_types: Vec<ReprColumnType> = input_types.into_iter().flatten().collect();
     for p in residue.iter_mut() {
         p.reduce(&flat_types);
@@ -404,6 +427,15 @@ mod tests {
         MirScalarExpr::column(a).call_binary(MirScalarExpr::column(b), func::Eq)
     }
 
+    /// Strips re-duplicating Project layers introduced by representative
+    /// substitution; tests assert the structure beneath.
+    fn through_projects(mut e: &MirRelationExpr) -> &MirRelationExpr {
+        while let MirRelationExpr::Project { input, .. } = e {
+            e = input;
+        }
+        e
+    }
+
     fn flatten(root: MirRelationExpr) -> MirRelationExpr {
         let mut env = BindingEnv {
             bindings: vec![],
@@ -425,7 +457,7 @@ mod tests {
             inputs,
             equivalences,
             ..
-        } = &result
+        } = through_projects(&result)
         else {
             panic!("expected flat Join at root, got {:?}", result)
         };
@@ -443,7 +475,7 @@ mod tests {
         // Nullable columns: the guard must survive.
         let cross = MirRelationExpr::join(vec![table2(true), table2(true)], vec![]);
         let result = flatten(cross.filter(vec![eq(0, 2)]));
-        let MirRelationExpr::Filter { input, predicates } = &result else {
+        let MirRelationExpr::Filter { input, predicates } = through_projects(&result) else {
             panic!("expected guard Filter at root, got {:?}", result)
         };
         assert_eq!(
@@ -463,8 +495,10 @@ mod tests {
     fn elides_guard_for_non_nullable() {
         let cross = MirRelationExpr::join(vec![table2(false), table2(false)], vec![]);
         let result = flatten(cross.filter(vec![eq(0, 2)]));
-        assert!(matches!(&result, MirRelationExpr::Join { equivalences, .. }
-            if equivalences.len() == 1));
+        assert!(
+            matches!(through_projects(&result), MirRelationExpr::Join { equivalences, .. }
+            if equivalences.len() == 1)
+        );
     }
 
     #[mz_ore::test]
@@ -496,13 +530,16 @@ mod tests {
         .filter(vec![div]);
         let outer = MirRelationExpr::join(vec![inner, table2(false)], vec![vec![(0, 1), (1, 1)]]);
         let result = flatten(outer);
-        let MirRelationExpr::Join { inputs, .. } = &result else {
+        let MirRelationExpr::Join { inputs, .. } = through_projects(&result) else {
             panic!("expected Join at root, got {:?}", result)
         };
         // The fallible Filter is a leaf; its inner join still flattened
         // (trivially) beneath it.
         assert_eq!(inputs.len(), 2);
-        assert!(matches!(&inputs[0], MirRelationExpr::Filter { .. }));
+        assert!(matches!(
+            through_projects(&inputs[0]),
+            MirRelationExpr::Filter { .. }
+        ));
     }
 
     #[mz_ore::test]

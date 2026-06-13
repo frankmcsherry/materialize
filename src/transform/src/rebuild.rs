@@ -22,6 +22,7 @@ pub mod filter_split;
 pub mod join_flatten;
 pub mod linear_fuse;
 pub mod predicate_placement;
+pub mod projection_thinning;
 pub mod reduce_class_split;
 
 use mz_expr::MirRelationExpr;
@@ -66,6 +67,8 @@ impl crate::Transform for RebuildLogical {
         filter_split::apply(&mut env);
         join_flatten::apply(&mut env);
         predicate_placement::apply(&mut env);
+        projection_thinning::apply(&mut env);
+        linear_fuse::apply(&mut env);
         reduce_class_split::apply(&mut env);
 
         *relation = env.into_expr();
