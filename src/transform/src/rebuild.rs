@@ -17,6 +17,7 @@
 //! physical pipeline requires. See play/optimizer-rebuild/ for the design
 //! journal, capability map, and scorecard.
 
+pub mod aggregate_dedup;
 pub mod env;
 pub mod filter_split;
 pub mod join_flatten;
@@ -75,6 +76,7 @@ impl crate::Transform for RebuildLogical {
         projection_thinning::apply(&mut env);
         linear_fuse::apply(&mut env);
         reduce_inline::apply(&mut env);
+        aggregate_dedup::apply(&mut env);
         reduce_class_split::apply(&mut env);
 
         *relation = env.into_expr();
