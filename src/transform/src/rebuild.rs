@@ -25,6 +25,7 @@ pub mod predicate_placement;
 pub mod projection_thinning;
 pub mod reduce_class_split;
 pub mod reduce_elision;
+pub mod reduce_inline;
 pub mod union_cancel;
 
 use mz_expr::MirRelationExpr;
@@ -73,6 +74,7 @@ impl crate::Transform for RebuildLogical {
         union_cancel::apply(&mut env);
         projection_thinning::apply(&mut env);
         linear_fuse::apply(&mut env);
+        reduce_inline::apply(&mut env);
         reduce_class_split::apply(&mut env);
 
         *relation = env.into_expr();
