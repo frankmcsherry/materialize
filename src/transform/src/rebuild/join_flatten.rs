@@ -36,7 +36,7 @@
 //! equivalences canonicalized; Filters remain conjunction-free; each
 //! region's visible columns are unchanged.
 
-use mz_expr::visit::VisitChildren;
+use mz_expr::visit::{Visit, VisitChildren};
 use mz_expr::{BinaryFunc, Columns, Eval, MirRelationExpr, MirScalarExpr};
 use mz_repr::ReprColumnType;
 
@@ -45,14 +45,21 @@ use crate::rebuild::predicate_placement::remap_columns;
 
 /// Applies the transform to every binding body and the root.
 pub fn apply(env: &mut BindingEnv) {
-    for (_id, body) in env.bindings.iter_mut() {
-        apply_expr(body);
+    // Bindings whose (already processed) bodies are the join identity, so
+    // `Get`s of them collapse too. Bindings are in dependency order, so a
+    // binding's unit-ness is settled before any use site is processed.
+    let mut units = std::collections::BTreeSet::new();
+    for (id, body) in env.bindings.iter_mut() {
+        apply_expr(body, &units);
+        if matches!(single_row_literals(body, &units), Some(lits) if lits.is_empty()) {
+            units.insert(*id);
+        }
     }
-    apply_expr(&mut env.root);
+    apply_expr(&mut env.root, &units);
 }
 
 /// Flattens every join region in `expr`, recursively.
-fn apply_expr(expr: &mut MirRelationExpr) {
+fn apply_expr(expr: &mut MirRelationExpr, units: &std::collections::BTreeSet<mz_expr::LocalId>) {
     if starts_region(expr) {
         let taken = std::mem::replace(
             expr,
@@ -62,11 +69,11 @@ fn apply_expr(expr: &mut MirRelationExpr) {
         // Regions stopped at boundaries (Map, fallible Filter, ...) may hold
         // further joins inside their leaves.
         for input in region.inputs.iter_mut() {
-            apply_expr(input);
+            apply_expr(input, units);
         }
-        *expr = emit(region);
+        *expr = emit(region, units);
     } else {
-        expr.visit_mut_children(|child| apply_expr(child));
+        expr.visit_mut_children(|child| apply_expr(child, units));
     }
 }
 
@@ -217,10 +224,17 @@ fn as_cross_input_equality(
     }
 }
 
-/// Emits `Project(Filter(Join(...)))` for a finished region, canonicalizing
-/// equivalences and reducing residue conjuncts against the flat types
-/// (which removes guards over non-nullable columns). Trivial layers elide.
-fn emit(region: Region) -> MirRelationExpr {
+/// Emits `Project(Map(Filter(Join(...))))` for a finished region,
+/// canonicalizing equivalences and reducing residue conjuncts against the
+/// flat types (which removes guards over non-nullable columns). Trivial
+/// layers elide.
+///
+/// Single-row constant inputs (multiplicity one) are removed from the join:
+/// they multiply rows by one and contribute only fixed values, which we
+/// substitute as literals into the equivalences and residue, and re-emit as
+/// `Map` expressions for any visible columns. These arise from outer-join
+/// and aggregate-default lowerings and otherwise cost arrangements.
+fn emit(region: Region, units: &std::collections::BTreeSet<mz_expr::LocalId>) -> MirRelationExpr {
     let Region {
         inputs,
         mut equivalences,
@@ -228,6 +242,90 @@ fn emit(region: Region) -> MirRelationExpr {
         outputs,
         flat_arity,
     } = region;
+    // Partition inputs: single-row constants become per-column literal
+    // substitutions; the rest are kept, their columns compacted.
+    let mut subst: std::collections::BTreeMap<usize, MirScalarExpr> = Default::default();
+    let mut old_to_new: std::collections::BTreeMap<usize, usize> = Default::default();
+    let mut kept = Vec::new();
+    let mut offset = 0;
+    for input in inputs {
+        let arity = input.arity();
+        match single_row_literals(&input, units) {
+            Some(literals) => {
+                for (j, lit) in literals.into_iter().enumerate() {
+                    subst.insert(offset + j, lit);
+                }
+            }
+            None => {
+                for j in 0..arity {
+                    old_to_new.insert(offset + j, old_to_new.len());
+                }
+                kept.push(input);
+            }
+        }
+        offset += arity;
+    }
+    let kept_arity = old_to_new.len();
+    if !subst.is_empty() {
+        let rewrite = |e: &mut MirScalarExpr| {
+            e.visit_mut_post(&mut |node| {
+                if let MirScalarExpr::Column(c, _) = node {
+                    if let Some(lit) = subst.get(c) {
+                        *node = lit.clone();
+                    } else {
+                        let n = old_to_new[&*c];
+                        *c = n;
+                    }
+                }
+            });
+        };
+        for class in equivalences.iter_mut() {
+            for member in class.iter_mut() {
+                rewrite(member);
+            }
+        }
+        for p in residue.iter_mut() {
+            rewrite(p);
+        }
+    }
+    if kept.is_empty() {
+        kept.push(MirRelationExpr::constant(
+            vec![vec![]],
+            mz_repr::ReprRelationType::new(vec![]),
+        ));
+    }
+    // Visible columns of removed constants become appended Map expressions.
+    let mut appended = Vec::new();
+    let mut appended_at: std::collections::BTreeMap<usize, usize> = Default::default();
+    let outputs: Vec<usize> = outputs
+        .iter()
+        .map(|o| match old_to_new.get(o) {
+            Some(n) => *n,
+            None => *appended_at.entry(*o).or_insert_with(|| {
+                appended.push(subst[o].clone());
+                kept_arity + appended.len() - 1
+            }),
+        })
+        .collect();
+
+    if kept.len() == 1 && equivalences.is_empty() {
+        let mut result = kept.pop().expect("len checked");
+        if !residue.is_empty() {
+            // Residue conjuncts have not been reduced against types here;
+            // keep them as written (placement will route them).
+            result = result.filter(residue);
+        }
+        if !appended.is_empty() {
+            result = result.map(appended);
+        }
+        let emitted_arity = kept_arity + appended_at.len();
+        if outputs.len() != emitted_arity || outputs.iter().enumerate().any(|(i, c)| i != *c) {
+            result = result.project(outputs);
+        }
+        return result;
+    }
+    let mut inputs = kept;
+    let flat_arity = kept_arity;
     // One typ() per input, gathered once (cost discipline: see the
     // capability map's notes on typ() in transforms).
     let input_types: Vec<Vec<ReprColumnType>> = inputs
@@ -247,10 +345,42 @@ fn emit(region: Region) -> MirRelationExpr {
     if !residue.is_empty() {
         result = result.filter(residue);
     }
-    if outputs.len() != flat_arity || outputs.iter().enumerate().any(|(i, c)| i != *c) {
+    if !appended.is_empty() {
+        result = result.map(appended);
+    }
+    let emitted_arity = flat_arity + appended_at.len();
+    if outputs.len() != emitted_arity || outputs.iter().enumerate().any(|(i, c)| i != *c) {
         result = result.project(outputs);
     }
     result
+}
+
+/// If `input` is a constant with exactly one row at multiplicity one (or a
+/// `Get` of a binding known to hold the zero-column one), returns its
+/// columns as literal expressions. Such an input multiplies the join by one
+/// and contributes only fixed values.
+fn single_row_literals(
+    input: &MirRelationExpr,
+    units: &std::collections::BTreeSet<mz_expr::LocalId>,
+) -> Option<Vec<MirScalarExpr>> {
+    match input {
+        MirRelationExpr::Constant {
+            rows: Ok(rows),
+            typ,
+        } if rows.len() == 1 && rows[0].1 == mz_repr::Diff::ONE => Some(
+            rows[0]
+                .0
+                .iter()
+                .zip(typ.column_types.iter())
+                .map(|(datum, ty)| MirScalarExpr::literal_ok(datum, ty.scalar_type.clone()))
+                .collect(),
+        ),
+        MirRelationExpr::Get {
+            id: mz_expr::Id::Local(id),
+            ..
+        } if units.contains(id) => Some(Vec::new()),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -373,5 +503,16 @@ mod tests {
         // (trivially) beneath it.
         assert_eq!(inputs.len(), 2);
         assert!(matches!(&inputs[0], MirRelationExpr::Filter { .. }));
+    }
+
+    #[mz_ore::test]
+    fn collapses_unit_inputs() {
+        let unit = MirRelationExpr::constant(vec![vec![]], ReprRelationType::new(vec![]));
+        let result = flatten(MirRelationExpr::join(vec![unit, table2(false)], vec![]));
+        assert!(
+            matches!(&result, MirRelationExpr::Get { .. }),
+            "expected bare Get, got {:?}",
+            result
+        );
     }
 }
