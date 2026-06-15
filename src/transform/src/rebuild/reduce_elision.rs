@@ -51,9 +51,6 @@ fn apply_expr(expr: &mut MirRelationExpr) {
     else {
         return;
     };
-    if !aggregates.is_empty() {
-        return;
-    }
     let group_cols: Option<Vec<usize>> = group_key
         .iter()
         .map(|k| match k {
@@ -62,25 +59,44 @@ fn apply_expr(expr: &mut MirRelationExpr) {
         })
         .collect();
     let Some(group_cols) = group_cols else { return };
-    let keyed = input
-        .typ()
+    let input_type = input.typ();
+    let keyed = input_type
         .keys
         .iter()
         .any(|key| key.iter().all(|k| group_cols.contains(k)));
     if !keyed {
         return;
     }
-    let input = std::mem::replace(
-        &mut **input,
-        MirRelationExpr::constant(vec![], mz_repr::ReprRelationType::new(vec![])),
-    );
-    let identity =
-        group_cols.len() == input.arity() && group_cols.iter().enumerate().all(|(i, c)| i == *c);
-    *expr = if identity {
-        input
+    if aggregates.is_empty() {
+        // Distinct over a keyed input: projection-only elision.
+        let input = std::mem::replace(
+            &mut **input,
+            MirRelationExpr::constant(vec![], mz_repr::ReprRelationType::new(vec![])),
+        );
+        let identity = group_cols.len() == input.arity()
+            && group_cols.iter().enumerate().all(|(i, c)| i == *c);
+        *expr = if identity {
+            input
+        } else {
+            input.project(group_cols)
+        };
     } else {
-        input.project(group_cols)
-    };
+        // Reduce grouped by a unique key: each group holds exactly one row, so
+        // every aggregate is an exact function of that row
+        // (`AggregateExpr::on_unique`). Mirror main's ReduceElision — map the
+        // group keys and per-row aggregate values onto the input, then project
+        // away the original columns. Correct because the group key is a unique
+        // key of the input (checked above).
+        let arity = input_type.column_types.len();
+        let n_out = group_key.len() + aggregates.len();
+        let mut new_scalars = group_key.clone();
+        new_scalars.extend(aggregates.iter().map(|a| a.on_unique(&input_type.column_types)));
+        let input = std::mem::replace(
+            &mut **input,
+            MirRelationExpr::constant(vec![], mz_repr::ReprRelationType::new(vec![])),
+        );
+        *expr = input.map(new_scalars).project((arity..arity + n_out).collect());
+    }
 }
 
 #[cfg(test)]
@@ -121,5 +137,35 @@ mod tests {
         };
         apply(&mut env);
         assert!(matches!(&env.root, MirRelationExpr::Reduce { .. }));
+    }
+
+    #[mz_ore::test]
+    fn elides_keyed_reduce_with_aggregate() {
+        // group by the unique key (col 0), aggregate sum(col 1): each group is
+        // one row, so the Reduce becomes Map(on_unique) + Project, no Reduce.
+        let reduce = keyed_table().reduce(
+            vec![0],
+            vec![mz_expr::AggregateExpr {
+                func: mz_expr::AggregateFunc::SumInt64,
+                expr: MirScalarExpr::column(1),
+                distinct: false,
+            }],
+            None,
+        );
+        let mut env = BindingEnv {
+            bindings: vec![],
+            root: reduce,
+        };
+        apply(&mut env);
+        assert!(
+            !contains_reduce(&env.root),
+            "Reduce should be elided, got {:?}",
+            env.root
+        );
+        assert!(matches!(&env.root, MirRelationExpr::Project { .. }));
+    }
+
+    fn contains_reduce(e: &MirRelationExpr) -> bool {
+        matches!(e, MirRelationExpr::Reduce { .. }) || e.children().any(contains_reduce)
     }
 }
