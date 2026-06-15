@@ -45,7 +45,7 @@ fn apply_expr(expr: &mut MirRelationExpr) {
     };
     // Flatten nested Unions (children already processed, so one level).
     let mut branches = Vec::with_capacity(1 + inputs.len());
-    let mut splice = |branch: MirRelationExpr, branches: &mut Vec<MirRelationExpr>| match branch {
+    let splice = |branch: MirRelationExpr, branches: &mut Vec<MirRelationExpr>| match branch {
         MirRelationExpr::Union { base, inputs } => {
             branches.push(*base);
             branches.extend(inputs);

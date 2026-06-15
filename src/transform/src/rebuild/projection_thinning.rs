@@ -38,8 +38,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use mz_expr::visit::{Visit, VisitChildren};
-use mz_expr::{Columns, Id, LocalId, MirRelationExpr, MirScalarExpr};
+use mz_expr::visit::VisitChildren;
+use mz_expr::{Columns, Id, LocalId, MirRelationExpr};
 use mz_repr::ReprRelationType;
 
 use crate::rebuild::env::BindingEnv;
@@ -567,7 +567,7 @@ fn narrow_typ(typ: &ReprRelationType, produced: &[usize]) -> ReprRelationType {
 
 #[cfg(test)]
 mod tests {
-    use mz_expr::{AggregateExpr, AggregateFunc, func};
+    use mz_expr::{AggregateExpr, AggregateFunc, MirScalarExpr, func};
     use mz_repr::{Datum, ReprScalarType};
 
     use super::*;

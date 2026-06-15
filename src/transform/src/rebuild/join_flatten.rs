@@ -324,7 +324,7 @@ fn emit(region: Region, units: &std::collections::BTreeSet<mz_expr::LocalId>) ->
         }
         return result;
     }
-    let mut inputs = kept;
+    let inputs = kept;
     let flat_arity = kept_arity;
     // One typ() per input, gathered once (cost discipline: see the
     // capability map's notes on typ() in transforms).

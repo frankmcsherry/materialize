@@ -23,6 +23,7 @@ pub mod filter_split;
 pub mod join_flatten;
 pub mod linear_fuse;
 pub mod predicate_placement;
+pub mod predicate_simplify;
 pub mod projection_thinning;
 pub mod reduce_class_split;
 pub mod reduce_elision;
@@ -71,6 +72,7 @@ impl crate::Transform for RebuildLogical {
         filter_split::apply(&mut env);
         join_flatten::apply(&mut env);
         predicate_placement::apply(&mut env);
+        predicate_simplify::apply(&mut env);
         reduce_elision::apply(&mut env);
         union_cancel::apply(&mut env);
         projection_thinning::apply(&mut env);
