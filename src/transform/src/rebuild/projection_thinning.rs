@@ -439,8 +439,22 @@ fn thin_owned(
             (MirRelationExpr::Negate { input }, m)
         }
         MirRelationExpr::Threshold { mut input } => {
-            let m = thin(&mut input, demand, demands);
-            (MirRelationExpr::Threshold { input }, m)
+            // Threshold clamps multiplicities to implement set-difference, so
+            // it compares WHOLE rows: demand must not be pushed through it
+            // (cf. ArrangeBy). Pushing a reduced demand let a set-difference's
+            // inputs be thinned below the columns it distinguishes on,
+            // cancelling rows it shouldn't (wrong EXCEPT/INTERSECT). Demand all
+            // input columns; narrow above, honoring the caller's demand.
+            let full: BTreeSet<usize> = (0..input.arity()).collect();
+            let m = thin(&mut input, &full, demands);
+            let produced: Vec<usize> = demand.iter().cloned().collect();
+            let result = if produced == m {
+                MirRelationExpr::Threshold { input }
+            } else {
+                let positions: Vec<usize> = produced.iter().map(|d| position(&m, *d)).collect();
+                MirRelationExpr::Threshold { input }.project(positions)
+            };
+            (result, produced)
         }
         MirRelationExpr::Union {
             mut base,
