@@ -589,3 +589,41 @@ sweep launched (b0prkn62d). Expect reg_result 1->0 (weak key closed) + some
 distinct chip. Commit if it helps + rails hold (reg_result<=prev, panic=0).
 Then Step 2: provenance-based elimination USING the existing Provenance analysis
 (reuse, not bespoke) as a legibility/hygiene test.
+
+## Iteration 29 (2026-06-16) — join-elimination diagnosis (RedundantJoin / exact provenance)
+
+Goal: close the join +121 gap. Confirmed it is type-b (RedundantJoin runs in
+cleanup) but does NOT fire on the rebuild's output. Diagnosis:
+
+- Ablation ruled out join_flatten, reduce_inline, AND projection_thinning — none
+  is the blocker; even a main-like Map->Distinct(column) plan doesn't trigger it.
+- Root cause: RedundantJoin (find_redundancy, redundant_join.rs) only drops a
+  join input whose ProvInfo.exact is true. `exact` means the value set EQUALS the
+  source's (not a subset; doc ~line 454). It is unset by Filter (line 311), Join,
+  Threshold, TopK, FlatMap, union cancellation. The rebuild's redundant DISTINCT
+  input is Distinct(Project(Map(f1%2))(Filter(f1 IS NOT NULL)(t1))) — the join-key
+  IS NOT NULL guard sits BELOW the Distinct -> non-exact -> RedundantJoin declines.
+- Why main fires: main runs RedundantJoin inside FuseAndCollapse (lib.rs:648),
+  in logical_optimizer's fixpoint, WHILE the Distinct is still exact — and runs
+  NormalizeLets immediately before it (lib.rs:642 "to ensure key info is
+  correct"). The rebuild REPLACED logical_optimizer, so it never runs
+  FuseAndCollapse/RedundantJoin. The only RedundantJoin its output meets is
+  logical_cleanup_pass (lib.rs:958), which runs AFTER that pass's PredicatePushdown
+  has sunk the guard below the Distinct -> non-exact -> too late.
+
+FIX (reuse, not bespoke; the cleanest hygiene-test outcome): run the EXISTING
+RedundantJoin in the rebuild while inputs are still exact — wired after
+join_flatten but before predicate_placement (which sinks the guards), with a
+NormalizeLets / key refresh immediately before it (mirroring lib.rs:642; also why
+experiment 1's refresh wasn't useless, just mis-placed). No new transform. Likely
+also recovers part of the distinct +233 (redundant joins drag Distincts along).
+RedundantJoin is a Transform needing TransformCtx: invoke it in
+RebuildLogical::actually_perform_transform via env.into_expr() -> NormalizeLets +
+RedundantJoin -> BindingEnv::from_normalized, at that pipeline point.
+
+NEXT (in the VM): implement the above, verify on test/sqllogictest/transform/
+redundant_join.slt + corpus sweep (rails: regress_result<=1, panic=0). Then the
+genuinely-lost families (semijoin idempotence, reduction pushdown) via Provenance
+PR #27932. Sweep harness: in Linux use native `timeout` and crash-isolated
+PER-FILE runs (drop the macOS batching/perl-alarm hack); exclude recursion_limit
+.slt (pre-existing dev-build stack overflow).
