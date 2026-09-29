@@ -22,7 +22,7 @@ The sections below are written to the agent.
 
 ## 1. The scenario (*Edit me*)
 
-A fixed-income trading desk wants a live position report:
+A representative workload: a fixed-income trading desk's live position report.
 
 * A live, ticking report for traders. Positions and prices change constantly,
   reference data (currency, sector, rating, ...) rarely. These are combined
@@ -34,8 +34,8 @@ A fixed-income trading desk wants a live position report:
   screen's worth.
 * Scale: up to ~100k rows, but wide: hundreds of columns per row, on the
   order of 600.
-* Memory is the main pain: in the desk's current system every trader's
-  customized view adds memory.
+* Memory is the usual pain: in systems that give each trader their own
+  customized view, every view adds memory.
 
 Treat this as a plausible workload, not a specification. Where it is vague
 (what the wide columns are, how many rows change per second, how many traders
@@ -71,7 +71,7 @@ technique (reference 1), by `assets/domains/fixed_income.sql` on the
 | Retention (`FI_RETENTION`) | 3 hours | `load.sh` env | Live positions ≈ 10/s × retention: 1h ~34k, 3h ~88k rows. |
 | Repricing (`FI_PRICE_SLOTS`) | 50: each bond every 5s | `load.sh` env | Row changes/s. 10 (every second) is ~5x the work and was CPU-bound on a laptop. 5 did not keep up. |
 | Rating actions | one per 30s | `rating_actions` | The slowly changing reference data. |
-| Reference columns | 16 per bond | `bonds` view | Blotter width. For the "600 columns" question see `wide.py` and the wide-row finding below. |
+| Reference columns | 16 per bond | `bonds` view | Blotter width. For widths on the order of 600 columns see `wide.py` and the wide-row finding below. |
 | Prices | base ± 1 point, noise | `prices` | Not a random walk. |
 
 Follow the skill's conventions: everything in the `materialize_demo` schema,
@@ -162,12 +162,6 @@ changes the scenario should still start from them.
 * **The wide columns.** Decide which are dimensions, which are measures and
   which only display, then pick the hot dimensions. If they are bucketed risk,
   model them as rows (see *Wide rows* above).
-* **Progress overhead.** At 16 workers progress tracking cost as much as the
-  operators did (`results/operators.txt`). Worth taking to timely: region
-  scheduling for frontier-only changes, one wakeup per peer's progress, operator
-  count per query.
-* **Process memory.** At 3h/5s the replica held ~2.2 GB RSS against ~180 MB of
-  arrangements. Unexplained.
 
 ## 7. References
 
