@@ -89,6 +89,7 @@ mz-transform = { path = "../transform" }
 proptest.workspace = true
 proptest-derive.workspace = true
 rand.workspace = true
+strsim.workspace = true
 
 [build-dependencies]
 mz-build-tools = { path = "../build-tools", default-features = false, features = ["protobuf-src"] }

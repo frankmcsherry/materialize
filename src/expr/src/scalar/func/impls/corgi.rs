@@ -868,6 +868,64 @@ mod tests {
     }
 
     #[mz_ore::test]
+    fn jaro_winkler_example_matches_strsim() {
+        let program = include_str!("corgi/jaro_winkler.col")
+            .lines()
+            .filter(|line| !line.starts_with('#'))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let jaro_winkler = func(&program, &["text", "text"], "float8");
+
+        let mut pairs: Vec<(String, String)> = [
+            ("MARTHA", "MARHTA"),
+            ("DWAYNE", "DUANE"),
+            ("DIXON", "DICKSONX"),
+            ("cheeseburger", "cheese fries"),
+            ("", ""),
+            ("", "abc"),
+            ("abc", "bca"),
+        ]
+        .iter()
+        .map(|(a, b)| (a.to_string(), b.to_string()))
+        .collect();
+        // Short strings over a small alphabet, so that matches, transpositions
+        // and common prefixes are all frequent.
+        let mut state: u64 = 0x9E37_79B9_7F4A_7C15;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let mut string = move || {
+            let len = next() % 16;
+            (0..len)
+                .map(|_| char::from(b'a' + u8::try_from(next() % 5).unwrap()))
+                .collect::<String>()
+        };
+        for _ in 0..2000 {
+            pairs.push((string(), string()));
+        }
+
+        let arena = RowArena::new();
+        let rows: Vec<Vec<Datum>> = pairs
+            .iter()
+            .map(|(a, b)| vec![Datum::String(a), Datum::String(b)])
+            .collect();
+        let slices: Vec<&[Datum]> = rows.iter().map(|row| &row[..]).collect();
+        let results = jaro_winkler.eval_batch(&slices, &arena);
+        for ((a, b), result) in pairs.iter().zip_eq(results) {
+            let got = result.unwrap().unwrap_float64();
+            let expected = strsim::jaro_winkler(a, b);
+            assert_eq!(
+                got.to_bits(),
+                expected.to_bits(),
+                "{a:?} {b:?}: {got} != {expected}"
+            );
+        }
+    }
+
+    #[mz_ore::test]
     fn zero_arguments() {
         let arena = RowArena::new();
         let five = func("input lit_i64 5", &[], "int8");

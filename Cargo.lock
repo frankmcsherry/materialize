@@ -7351,6 +7351,7 @@ dependencies = [
  "serde_bytes",
  "serde_json",
  "smallvec",
+ "strsim",
  "tracing",
  "uncased",
  "unicode-normalization",
