@@ -985,6 +985,15 @@ fn variadic_samples() -> Vec<Sample<VariadicFunc>> {
             },
             vec![SqlScalarType::Int32, SqlScalarType::String],
         ),
+        variadic(
+            CorgiFunc::new(
+                "(input.0, input.1) add_i64".into(),
+                vec![SqlScalarType::Int64, SqlScalarType::Int64],
+                SqlScalarType::Int64,
+            )
+            .expect("valid corgi program"),
+            vec![SqlScalarType::Int64, SqlScalarType::Int64],
+        ),
         // Payload-free hand-written functions, probed at their natural inputs.
         variadic(And, vec![SqlScalarType::Bool, SqlScalarType::Bool]),
         variadic(Or, vec![SqlScalarType::Bool, SqlScalarType::Bool]),

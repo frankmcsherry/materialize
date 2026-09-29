@@ -1,0 +1,217 @@
+# Copyright Materialize, Inc. and contributors. All rights reserved.
+#
+# Use of this software is governed by the Business Source License
+# included in the LICENSE file at the root of this repository.
+#
+# As of the Change Date specified in that file, in accordance with
+# the Business Source License, use of this software will be governed
+# by the Apache License, Version 2.0.
+
+# The `corgi` function, which evaluates a corgi program on its arguments.
+
+mode cockroach
+
+statement error the corgi function is not available
+SELECT corgi('input', 'int8', 1::int8)
+
+simple conn=mz_system,user=mz_system
+ALTER SYSTEM SET enable_corgi_udf = true
+----
+COMPLETE 0
+
+statement ok
+CREATE TABLE t (a int8, b int8, s text, l int8 list)
+
+statement ok
+INSERT INTO t VALUES
+    (3, -5, 'a,bb,ccc', LIST[5, 6]),
+    (-7, 2, '', LIST[]::int8 list),
+    (NULL, 1, NULL, NULL)
+
+# Signed arithmetic, and null arguments.
+query II rowsort
+SELECT a, corgi('(input.0, input.1) add_i64', 'int8', a, b) FROM t
+----
+-7  -5
+3  -2
+NULL  NULL
+
+# Comparisons produce masks, which are booleans.
+query IB rowsort
+SELECT a, corgi('(input.0, input.1) lt', 'bool', a, b) FROM t
+----
+-7  true
+3  false
+NULL  NULL
+
+# Text in, a count and a list out. `len` counts unsigned.
+query TIT rowsort
+SELECT s, corgi('input split ","  len', 'uint8', s), corgi('input split ","', 'text list', s)::text FROM t
+----
+(empty)  1  {""}
+a,bb,ccc  3  {a,bb,ccc}
+NULL  NULL  NULL
+
+# A fallible stage without `try` fails the row, and with `try` makes it null.
+query error corgi program failed on this row
+SELECT corgi('input head', 'int8', l) FROM t
+
+query I rowsort
+SELECT corgi('input head try', 'int8', l) FROM t
+----
+5
+NULL
+NULL
+
+# In a maintained view, the function runs in the dataflow.
+statement ok
+CREATE MATERIALIZED VIEW mv AS
+SELECT a, corgi('input map (x -> (x, x lit_i64 1) add_i64)', 'int8 list', l) AS l2
+FROM t
+
+query IT rowsort
+SELECT a, l2::text FROM mv
+----
+-7  {}
+3  {6,7}
+NULL  NULL
+
+statement ok
+CREATE MATERIALIZED VIEW mv2 AS
+SELECT a, b, corgi('((input.0, input.1) lt, input.0, input.1) select', 'int8', a, b) AS least
+FROM t
+
+query III rowsort
+SELECT * FROM mv2
+----
+-7  2  -7
+3  -5  -5
+NULL  1  NULL
+
+statement ok
+INSERT INTO t VALUES (10, 20, 'x', LIST[1])
+
+query III rowsort
+SELECT * FROM mv2
+----
+-7  2  -7
+10  20  10
+3  -5  -5
+NULL  1  NULL
+
+# Jaro-Winkler similarity: src/expr/src/scalar/func/impls/corgi/jaro_winkler.col,
+# without its comments.
+statement ok
+CREATE TABLE names (a text, b text)
+
+statement ok
+INSERT INTO names VALUES
+    ('MARTHA', 'MARHTA'), ('DWAYNE', 'DUANE'), ('DIXON', 'DICKSONX'),
+    ('cheeseburger', 'cheese fries'), ('', ''), ('abc', '')
+
+statement ok
+CREATE MATERIALIZED VIEW jaro_winkler AS
+SELECT a, b, corgi('let (s1, s2) = input in
+let l1 = s1 len in
+let l2 = s2 len in
+let d = (l1, l2) max shr 1 max 1 sub 1 in
+let s1x = ((l1 lit 0, s1) foldscan ((i, c) -> (i add_u64 1, (i, c)))).1 in
+let s2x = ((l1 lit 0, s2) foldscan ((j, c) -> (j add_u64 1, (j, c, j lit 0)))).1 in
+let matching = ((d, s2x), s1x) foldscan ((acc, x) ->
+    let (d, st) = acc in
+    let (i, c) = x in
+    let jm = ((d, i, c), st) cap_list map (p ->
+        let (ctx, e) = p in
+        let (d, i, c) = ctx in
+        let (j, ch, m) = e in
+        let ok = (((ch, c) eq, (m, m lit 0) eq) mul, ((i, (j, d) add) le, (j, (i, d) add) le) mul) mul in
+        (ok, j, j lit 1000000000) select) fold_min in
+    let st2 = (jm, st) cap_list map (p ->
+        let (jm, e) = p in
+        let (j, ch, m) = e in
+        (j, ch, (m, (j, jm) eq) max)) in
+    let same = ((i, c), st) cap_list map (p ->
+        let (ic, e) = p in
+        let (i, c) = ic in
+        let (j, ch, m) = e in
+        ((i, j) eq, (c, ch) eq) mul) fold_max in
+    ((d, st2), ((jm, jm lit 1000000000) lt, same, (i, i lit 4) lt, c))) in
+let s2m = matching.0.1 in
+let per1 = matching.1 in
+let m = per1 map (o -> o.0) fold_add in
+let rank2 = ((l1 lit 0, s2m) foldscan ((k, e) ->
+    let (j, ch, mm) = e in
+    let k2 = (k, mm) add in
+    (k2, (ch, mm, k2)))).1 in
+let rank1 = ((l1 lit 0, per1) foldscan ((k, o) ->
+    let (hit, same, lt4, c) = o in
+    let k2 = (k, hit) add in
+    (k2, (c, hit, k2)))).1 in
+let t2 = (rank2, rank1) cap_list map (p ->
+    let (rank2, e) = p in
+    let (c, hit, k) = e in
+    let mis = ((c, k), rank2) cap_list map (q ->
+        let (ck, f) = q in
+        let (c, k) = ck in
+        let (ch, mm, k2) = f in
+        ((mm, (k2, k) eq) mul, (ch, c) ne) mul) fold_max in
+    (mis, hit) mul) fold_add in
+let t = t2 shr 1 in
+let prefix = (((l1 lit 0, l1 lit 1), per1) fold ((acc, o) ->
+    let (p, alive) = acc in
+    let (hit, same, lt4, c) = o in
+    let a2 = ((alive, same) mul, lt4) mul in
+    ((p, a2) add, a2))).0 in
+let fm = m to_f64 in
+let zero = m lit 0 to_f64 in
+let one = m lit 1 to_f64 in
+let ten = m lit 10 to_f64 in
+let jaro = ((((fm, l1 to_f64) div_f64, (fm, l2 to_f64) div_f64) add_f64, ((fm, t to_f64) sub_f64, fm) div_f64) add_f64, m lit 3 to_f64) div_f64 in
+let jaro0 = ((m, m lit 0) eq, zero, jaro) select in
+let sim = (((l1, l2) add, m lit 0) eq, one, jaro0) select in
+let boost = ((m lit 7 to_f64, ten) div_f64, sim) lt in
+let jw = (sim, (((one, ten) div_f64, prefix to_f64) mul_f64, (one, sim) sub_f64) mul_f64) add_f64 in
+(boost, jw, sim) select', 'float8', a, b) AS similarity
+FROM names
+
+statement ok
+INSERT INTO names VALUES ('jellyfish', 'smellyfish')
+
+query TTT rowsort
+SELECT a, b, round(similarity::numeric, 6)::text FROM jaro_winkler
+----
+(empty)  (empty)  1.000000
+DIXON  DICKSONX  0.813333
+DWAYNE  DUANE  0.840000
+MARTHA  MARHTA  0.961111
+abc  (empty)  0
+cheeseburger  cheese␠fries  0.866667
+jellyfish  smellyfish  0.896296
+
+# The program is compiled and type checked at plan time.
+query error corgi: the program returns U64, but text is List<U8>
+SELECT corgi('(input.0, input.1) add_i64', 'text', a, b) FROM t
+
+query error corgi requires string literals
+SELECT corgi(s, 'int8', a) FROM t
+
+query error corgi: corgi functions do not support type
+SELECT corgi('input', 'int8', 1.5::numeric)
+
+query error corgi: corgi functions do not support type
+SELECT corgi('input', 'numeric', a) FROM t
+
+query T multiline
+EXPLAIN OPTIMIZED PLAN WITH (humanized expressions) AS VERBOSE TEXT FOR
+SELECT corgi('(input.0, input.1) add_i64', 'int8', a, b) FROM t
+----
+Explained Query:
+  Project (#4)
+    Map (corgi["(input.0, input.1) add_i64"](#0{a}, #1{b}))
+      ReadStorage materialize.public.t
+
+Source materialize.public.t
+
+Target cluster: quickstart
+
+EOF

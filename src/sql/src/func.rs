@@ -4304,6 +4304,25 @@ pub static MZ_CATALOG_BUILTINS: LazyLock<BTreeMap<&'static str, Func>> = LazyLoc
                 }) => Interval,
                 oid::FUNC_AVG_INTERNAL_V1_INTERVAL_OID;
         },
+        "corgi" => Scalar {
+            params!([String, String], Any...) => Operation::variadic(|ecx, exprs| {
+                ecx.require_feature_flag(&vars::ENABLE_CORGI_UDF)?;
+                let mut exprs = exprs.into_iter();
+                let program = exprs.next().and_then(|e| e.into_literal_string());
+                let return_type = exprs.next().and_then(|e| e.into_literal_string());
+                let (Some(program), Some(return_type)) = (program, return_type) else {
+                    sql_bail!("corgi requires string literals for its program and return type")
+                };
+                let args: Vec<_> = exprs.collect();
+                let arg_types = args.iter().map(|arg| ecx.scalar_type(arg)).collect();
+                let func = func::corgi_type_from_name(&return_type)
+                    .and_then(|return_type| {
+                        func::CorgiFunc::new(program, arg_types, return_type)
+                    })
+                    .map_err(|e| sql_err!("corgi: {}", e))?;
+                Ok(HirScalarExpr::call_variadic(func, args))
+            }) => Any, oid::FUNC_CORGI_OID;
+        },
         "csv_extract" => Table {
             params!(Int64, String) => Operation::binary(move |_ecx, ncols, input| {
                 const MAX_EXTRACT_COLUMNS: i64 = 8192;

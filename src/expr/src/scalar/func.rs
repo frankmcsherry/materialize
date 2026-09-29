@@ -137,6 +137,7 @@ func_name! {
     AdjustTimestampPrecision => "adjust_timestamp_precision",
     AdjustTimestampTzPrecision => "adjust_timestamp_tz_precision",
     CaseLiteral => "case_literal",
+    CorgiFunc => "corgi",
     <E> CastArrayToArray<E> => "cast_array_to_array",
     <E> CastArrayToJsonb<E> => "cast_array_to_jsonb",
     CastArrayToString => "cast_array_to_string",

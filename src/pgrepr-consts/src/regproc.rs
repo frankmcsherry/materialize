@@ -688,6 +688,7 @@ pub const NAMES: &[(u32, &str)] = &[
     (17125, "mz_internal.parse_catalog_item_references"),
     (17127, "mz_unsafe.mz_avg_promotion"),
     (17128, "mz_unsafe.mz_avg_promotion_internal_v1"),
+    (17129, "corgi"),
     // END GENERATED
 ];
 

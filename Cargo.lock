@@ -2521,6 +2521,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "corgi"
+version = "0.1.0"
+source = "git+https://github.com/frankmcsherry/WIP?rev=7d46146955d3f3f45c8d69d394684aa9b4e37dcc#7d46146955d3f3f45c8d69d394684aa9b4e37dcc"
+
+[[package]]
 name = "cpp_demangle"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7298,6 +7303,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "columnation",
+ "corgi",
  "crc32fast",
  "criterion",
  "csv",
@@ -7345,6 +7351,7 @@ dependencies = [
  "serde_bytes",
  "serde_json",
  "smallvec",
+ "strsim",
  "tracing",
  "uncased",
  "unicode-normalization",

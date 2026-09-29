@@ -21,12 +21,17 @@ harness = false
 name = "window_functions"
 harness = false
 
+[[bench]]
+name = "corgi"
+harness = false
+
 [dependencies]
 aho-corasick.workspace = true
 anyhow.workspace = true
 bytesize.workspace = true
 chrono.workspace = true
 columnation.workspace = true
+corgi.workspace = true
 chrono-tz.workspace = true
 crc32fast.workspace = true
 csv.workspace = true
@@ -42,7 +47,7 @@ md-5.workspace = true
 murmur2.workspace = true
 mz-catalog-decode = { path = "../catalog-decode" }
 mz-expr-derive = { path = "../expr-derive", features = ["test"] }
-mz-ore = { path = "../ore", features = ["network", "proptest", "id_gen"] }
+mz-ore = { path = "../ore", features = ["network", "panic", "proptest", "id_gen"] }
 mz-persist-types = { path = "../persist-types" }
 mz-pgrepr = { path = "../pgrepr" }
 mz-pgtz = { path = "../pgtz" }
@@ -84,6 +89,7 @@ mz-transform = { path = "../transform" }
 proptest.workspace = true
 proptest-derive.workspace = true
 rand.workspace = true
+strsim.workspace = true
 
 [build-dependencies]
 mz-build-tools = { path = "../build-tools", default-features = false, features = ["protobuf-src"] }

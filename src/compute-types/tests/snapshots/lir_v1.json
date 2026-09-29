@@ -2085,6 +2085,19 @@
   "ConstantTimeEqBytes": "UNITSTRUCT",
   "ConstantTimeEqString": "UNITSTRUCT",
   "ConvertFrom": "UNITSTRUCT",
+  "CorgiFunc": {
+    "STRUCT": {
+      "arg_types": {
+        "SEQ": {
+          "TYPENAME": "SqlScalarType"
+        }
+      },
+      "program": "STR",
+      "return_type": {
+        "TYPENAME": "SqlScalarType"
+      }
+    }
+  },
   "Cos": "UNITSTRUCT",
   "Cosh": "UNITSTRUCT",
   "Cot": "UNITSTRUCT",
@@ -5390,6 +5403,11 @@
       "ConcatWs": {
         "NEWTYPE": {
           "TYPENAME": "ConcatWs"
+        }
+      },
+      "Corgi": {
+        "NEWTYPE": {
+          "TYPENAME": "CorgiFunc"
         }
       },
       "DateBinTimestamp": {

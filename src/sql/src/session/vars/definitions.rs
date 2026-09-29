@@ -1977,6 +1977,12 @@ feature_flags!(
         enable_for_item_parsing: true,
     },
     {
+        name: enable_corgi_udf,
+        desc: "the corgi function",
+        default: false,
+        enable_for_item_parsing: true,
+    },
+    {
         name: enable_replica_targeted_materialized_views,
         desc: "replica-targeted materialized views",
         default: false,
