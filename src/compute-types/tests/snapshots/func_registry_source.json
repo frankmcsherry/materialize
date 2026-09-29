@@ -592,6 +592,7 @@
     "coalesce": {"display":"coalesce","sqlfunc_decl":null,"body_fingerprint":null},
     "concat": {"display":"concat","sqlfunc_decl":"#[sqlfunc(is_associative = true)] fn concat(strs: Variadic<Option<&str>>, temp_storage: &RowArena) -> Result<String, EvalError>","body_fingerprint":"b1feb6077b7fc7cf"},
     "concat_ws": {"display":"concat_ws","sqlfunc_decl":"#[sqlfunc] fn concat_ws(ws: &str, rest: Variadic<Option<&str>>, temp_storage: &RowArena,) -> Result<String, EvalError>","body_fingerprint":"ca2e98067ca19696"},
+    "corgi": {"display":"corgi[\"(input.0, input.1) add_i64\"]","sqlfunc_decl":null,"body_fingerprint":null},
     "date_bin_timestamp": {"display":"timestamp_bin","sqlfunc_decl":"#[sqlfunc(sqlname = \"timestamp_bin\")] fn date_bin_timestamp(stride: Interval, source: CheckedTimestamp<NaiveDateTime>, origin: CheckedTimestamp<NaiveDateTime>,) -> Result<CheckedTimestamp<NaiveDateTime>, EvalError>","body_fingerprint":"530154573079756c"},
     "date_bin_timestamp_tz": {"display":"timestamptz_bin","sqlfunc_decl":"#[sqlfunc(sqlname = \"timestamptz_bin\")] fn date_bin_timestamp_tz(stride: Interval, source: CheckedTimestamp<DateTime<Utc>>, origin: CheckedTimestamp<DateTime<Utc>>,) -> Result<CheckedTimestamp<DateTime<Utc>>, EvalError>","body_fingerprint":"530154573079756c"},
     "date_diff_date": {"display":"datediff","sqlfunc_decl":"#[sqlfunc(sqlname = \"datediff\")] fn date_diff_date(unit_str: &str, a: Date, b: Date) -> Result<i64, EvalError>","body_fingerprint":"e342fecaf3f8a0aa"},

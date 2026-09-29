@@ -323,6 +323,9 @@ clap = { version = "4.6.1", features = ["derive"] }
 clap_complete = "4.6.2"
 columnar = "0.13.0"
 columnation = "0.1.2"
+# Spike: corgi, for user-defined scalar functions. Pinned to the revision DDIR uses. Landing needs
+# a MaterializeInc fork or a crates.io release; see deny.toml's git-source policy.
+corgi = { git = "https://github.com/frankmcsherry/WIP", rev = "7d46146955d3f3f45c8d69d394684aa9b4e37dcc" }
 compact_bytes = "0.2.1"
 compile-time-run = "0.2.12"
 console-subscriber = "0.5.0"

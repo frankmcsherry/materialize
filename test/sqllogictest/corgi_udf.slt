@@ -1,0 +1,128 @@
+# Copyright Materialize, Inc. and contributors. All rights reserved.
+#
+# Use of this software is governed by the Business Source License
+# included in the LICENSE file at the root of this repository.
+#
+# As of the Change Date specified in that file, in accordance with
+# the Business Source License, use of this software will be governed
+# by the Apache License, Version 2.0.
+
+# The `corgi` function, which evaluates a corgi program on its arguments.
+
+mode cockroach
+
+statement error the corgi function is not available
+SELECT corgi('input', 'int8', 1::int8)
+
+simple conn=mz_system,user=mz_system
+ALTER SYSTEM SET enable_corgi_udf = true
+----
+COMPLETE 0
+
+statement ok
+CREATE TABLE t (a int8, b int8, s text, l int8 list)
+
+statement ok
+INSERT INTO t VALUES
+    (3, -5, 'a,bb,ccc', LIST[5, 6]),
+    (-7, 2, '', LIST[]::int8 list),
+    (NULL, 1, NULL, NULL)
+
+# Signed arithmetic, and null arguments.
+query II rowsort
+SELECT a, corgi('(input.0, input.1) add_i64', 'int8', a, b) FROM t
+----
+-7  -5
+3  -2
+NULL  NULL
+
+# Comparisons produce masks, which are booleans.
+query IB rowsort
+SELECT a, corgi('(input.0, input.1) lt', 'bool', a, b) FROM t
+----
+-7  true
+3  false
+NULL  NULL
+
+# Text in, a count and a list out. `len` counts unsigned.
+query TIT rowsort
+SELECT s, corgi('input split ","  len', 'uint8', s), corgi('input split ","', 'text list', s)::text FROM t
+----
+(empty)  1  {""}
+a,bb,ccc  3  {a,bb,ccc}
+NULL  NULL  NULL
+
+# A fallible stage without `try` fails the row, and with `try` makes it null.
+query error corgi program failed on this row
+SELECT corgi('input head', 'int8', l) FROM t
+
+query I rowsort
+SELECT corgi('input head try', 'int8', l) FROM t
+----
+5
+NULL
+NULL
+
+# In a maintained view, the function runs in the dataflow.
+statement ok
+CREATE MATERIALIZED VIEW mv AS
+SELECT a, corgi('input map (x -> (x, x lit_i64 1) add_i64)', 'int8 list', l) AS l2
+FROM t
+
+query IT rowsort
+SELECT a, l2::text FROM mv
+----
+-7  {}
+3  {6,7}
+NULL  NULL
+
+statement ok
+CREATE MATERIALIZED VIEW mv2 AS
+SELECT a, b, corgi('((input.0, input.1) lt, input.0, input.1) select', 'int8', a, b) AS least
+FROM t
+
+query III rowsort
+SELECT * FROM mv2
+----
+-7  2  -7
+3  -5  -5
+NULL  1  NULL
+
+statement ok
+INSERT INTO t VALUES (10, 20, 'x', LIST[1])
+
+query III rowsort
+SELECT * FROM mv2
+----
+-7  2  -7
+10  20  10
+3  -5  -5
+NULL  1  NULL
+
+# The program is compiled and type checked at plan time.
+query error corgi: the program returns U64, but text is List<U8>
+SELECT corgi('(input.0, input.1) add_i64', 'text', a, b) FROM t
+
+query error corgi requires string literals
+SELECT corgi(s, 'int8', a) FROM t
+
+query error corgi: corgi functions do not support type
+SELECT corgi('input', 'int8', 1.5::numeric)
+
+query error corgi: corgi functions do not support type
+SELECT corgi('input', 'numeric', a) FROM t
+
+query T multiline
+EXPLAIN OPTIMIZED PLAN WITH (humanized expressions) AS VERBOSE TEXT FOR
+SELECT corgi('(input.0, input.1) add_i64', 'int8', a, b) FROM t
+----
+Explained Query:
+  Project (#4)
+    Map (corgi["(input.0, input.1) add_i64"](#0{a}, #1{b}))
+      ReadStorage materialize.public.t
+
+Source materialize.public.t
+
+Target cluster: quickstart
+
+EOF
