@@ -1,0 +1,23 @@
+# clicks.py --n 10, board.py against materialize/materialized v26.43.0 (Docker, 18-core Apple silicon).
+# 3h retention, 5s repricing, PIVOTS=board. Another Materialize container was using 4-8 cores on the same host throughout.
+cube       n= 20  p50   118 ms  p90   251 ms  max   279 ms   (screen lag now 214 ms)
+cube+med   n= 20  p50   680 ms  p90  1057 ms  max  1247 ms   (screen lag now 215 ms)
+on demand  n= 20  p50    75 ms  p90   100 ms  max   117 ms   (screen lag now 130 ms)
+layout     n= 10  p50   146 ms  p90   206 ms  max   255 ms   (screen lag now 149 ms)
+# second run, a few minutes later, with the other container mostly idle (~25%):
+cube       n= 20  p50   152 ms  p90   230 ms  max   276 ms   (screen lag now 86 ms)
+cube+med   n= 20  p50   448 ms  p90   558 ms  max   620 ms   (screen lag now 143 ms)
+on demand  n= 20  p50    88 ms  p90   210 ms  max   250 ms   (screen lag now 115 ms)
+layout     n= 10  p50    92 ms  p90   113 ms  max   157 ms   (screen lag now 85 ms)
+# After board.py started fencing cube clicks: a cube click now counts only once the
+# subscription's frontier passes a timestamp read after the write (SELECT mz_now()).
+# The two runs above could stop the clock early when a click changed nothing visible.
+# Two runs, other container ~25-30%:
+cube       n= 16  p50   196 ms  p90   447 ms  max   525 ms   (screen lag now 89 ms)
+cube+med   n= 16  p50   634 ms  p90   721 ms  max   739 ms   (screen lag now 265 ms)
+on demand  n= 16  p50    56 ms  p90    86 ms  max   153 ms   (screen lag now 76 ms)
+layout     n=  8  p50    88 ms  p90   120 ms  max   128 ms   (screen lag now 131 ms)
+cube       n= 20  p50   188 ms  p90   360 ms  max   480 ms   (screen lag now 125 ms)
+cube+med   n= 20  p50   604 ms  p90   845 ms  max   891 ms   (screen lag now 422 ms)
+on demand  n= 20  p50    59 ms  p90   105 ms  max   164 ms   (screen lag now 180 ms)
+layout     n= 10  p50   104 ms  p90   169 ms  max   191 ms   (screen lag now 100 ms)

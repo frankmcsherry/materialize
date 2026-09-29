@@ -1,0 +1,10 @@
+mode        N  added MB  MB/trader  added cores  detail
+data        1      0.63      0.628         0.24  49 visible rows
+data        8     14.92      1.865         0.54  392 visible rows
+data       64     36.73      0.574         1.30  3136 visible rows
+data      256     61.27      0.239         2.02  12544 visible rows
+mode        N  added MB  MB/trader  added cores  detail
+grid        1     22.29     22.286         0.08  88301 rows held
+grid        4     90.26     22.564         0.71  353272 rows held
+grid        8    178.88     22.361         1.26  706640 rows held
+

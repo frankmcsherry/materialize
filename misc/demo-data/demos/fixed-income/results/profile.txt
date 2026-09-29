@@ -1,0 +1,110 @@
+# CPU profiles of the compute clusterd (Materialize's built-in profiler, 99 Hz, 15 s, threads merged),
+# board.py with two cube traders, bucketed by fgbreakdown.py; raw profiles in results/profiles/.
+
+## 800cc (16 workers), 100ms interval
+total 5.81 cores
+  1.06 cores  18.2%  progress: pointstamp propagation (Tracker)
+            0.20  <timely::progress::reachability::Tracker<mz_repr::timestamp::Timestamp>>::propagate_all
+            0.19  <timely::progress::frontier::MutableAntichain<mz_repr::timestamp::Timestamp>>::rebuild
+  1.05 cores  18.0%  operators: other logic
+            0.07  mz_repr::row::read_datum
+            0.05  mz_repr::row::push_datum::<compact_bytes::growable::CompactBytes>
+  0.93 cores  16.0%  operators: arrangement merges
+            0.07  <mz_row_spine::dictionary::DatumContainer as differential_dataflow::trace::implementations::containers::BatchContainer>::index
+            0.05  <mz_timely_util::columnation::ColInternalMerger<(mz_repr::row::Row, mz_repr::row::Row), mz_repr::timestamp::Timestamp, mz_ore::overflowing::Overflowin
+  0.87 cores  15.0%  introspection logging (timely/differential events)
+            0.06  _rjem_je_edata_heap_remove
+            0.05  <mz_compute::logging::timely::DemuxHandler>::handle
+  0.56 cores   9.6%  progress: broadcast send/recv between workers
+            0.12  <std::sync::mpmc::list::Channel<timely::encoding::Bincode<(usize, usize, timely::progress::change_batch::ChangeBatch<(timely::progress::Location, mz_r
+            0.08  syscall
+  0.51 cores   8.8%  other threads
+            0.40  ?
+            0.03  __AArch64ADRPThunk_pthread_key_delete
+  0.30 cores   5.2%  progress: other subgraph scheduling
+            0.09  <timely::progress::subgraph::Subgraph<mz_repr::timestamp::Timestamp, mz_repr::timestamp::Timestamp> as timely::scheduling::Schedule>::schedule
+            0.07  <timely::scheduling::activate::Activations>::for_extensions::<<timely::progress::subgraph::Subgraph<(), mz_timely_util::order::Partitioned<mz_storage_
+  0.23 cores   3.9%  worker: outside step
+            0.04  <differential_dataflow::operators::arrange::agent::TraceAgent<differential_dataflow::trace::implementations::spine_fueled::Spine<mz_row_spine::arc_bat
+            0.04  <mz_compute::server::Config as mz_cluster::client::ClusterSpec>::run_worker
+  0.12 cores   2.1%  worker: communication (receive/flush)
+            0.03  <std::sync::mpmc::list::Channel<usize>>::try_recv
+            0.03  syscall
+  0.12 cores   2.0%  progress: frontier/changebatch maintenance
+            0.09  <timely::progress::change_batch::ChangeBatch<mz_repr::timestamp::Timestamp>>::compact
+            0.01  <timely::progress::change_batch::ChangeBatch<(timely::progress::Location, mz_repr::timestamp::Timestamp)>>::compact
+  0.07 cores   1.1%  worker: parked/waking
+            0.06  <timely::worker::Worker>::step_or_park
+            0.00  <core::iter::adapters::cloned::Cloned<core::slice::iter::Iter<(usize, usize)>> as core::iter::traits::iterator::Iterator>::try_fold::<(), core::iter::
+
+## 800cc (16 workers), 1s interval
+total 2.31 cores
+  0.77 cores  33.3%  operators: other logic
+            0.06  mz_repr::row::read_datum
+            0.04  mz_repr::row::push_datum::<compact_bytes::growable::CompactBytes>
+  0.41 cores  17.7%  operators: arrangement merges
+            0.03  <mz_timely_util::columnation::ColInternalMerger<(mz_repr::row::Row, mz_repr::row::Row), mz_repr::timestamp::Timestamp, mz_ore::overflowing::Overflowin
+            0.03  bcmp
+  0.29 cores  12.5%  introspection logging (timely/differential events)
+            0.02  _rjem_je_edata_heap_remove
+            0.02  <mz_compute::logging::timely::DemuxHandler>::handle
+  0.22 cores   9.6%  progress: pointstamp propagation (Tracker)
+            0.05  <timely::progress::reachability::Tracker<mz_repr::timestamp::Timestamp>>::propagate_all
+            0.03  <timely::progress::change_batch::ChangeBatch<mz_repr::timestamp::Timestamp>>::maintain_bounds
+  0.17 cores   7.2%  other threads
+            0.14  ?
+            0.01  syscall
+  0.16 cores   7.0%  progress: broadcast send/recv between workers
+            0.03  syscall
+            0.03  <std::sync::mpmc::list::Channel<timely::encoding::Bincode<(usize, usize, timely::progress::change_batch::ChangeBatch<(timely::progress::Location, mz_r
+  0.10 cores   4.4%  worker: outside step
+            0.02  <differential_dataflow::operators::arrange::agent::TraceAgent<differential_dataflow::trace::implementations::spine_fueled::Spine<mz_row_spine::arc_bat
+            0.01  <mz_compute::compute_state::ActiveComputeState>::report_frontiers
+  0.09 cores   4.0%  progress: other subgraph scheduling
+            0.03  <timely::progress::subgraph::Subgraph<mz_repr::timestamp::Timestamp, mz_repr::timestamp::Timestamp> as timely::scheduling::Schedule>::schedule
+            0.01  <timely::scheduling::activate::Activations>::for_extensions::<<timely::progress::subgraph::Subgraph<(), mz_timely_util::order::Partitioned<mz_storage_
+  0.05 cores   2.1%  worker: communication (receive/flush)
+            0.02  syscall
+            0.01  <std::sync::mpmc::list::Channel<usize>>::try_recv
+  0.03 cores   1.5%  progress: frontier/changebatch maintenance
+            0.03  <timely::progress::change_batch::ChangeBatch<mz_repr::timestamp::Timestamp>>::compact
+            0.00  <timely::progress::change_batch::ChangeBatch<(timely::progress::Location, mz_repr::timestamp::Timestamp)>>::maintain_bounds
+  0.01 cores   0.6%  worker: parked/waking
+            0.01  <timely::worker::Worker>::step_or_park
+            0.00  std::thread::functions::park_timeout
+
+## 200cc (4 workers), 100ms interval
+total 1.66 cores
+  0.64 cores  38.4%  operators: other logic
+            0.05  mz_repr::row::push_datum::<compact_bytes::growable::CompactBytes>
+            0.05  mz_repr::row::read_datum
+  0.39 cores  23.2%  operators: arrangement merges
+            0.05  <mz_row_spine::dictionary::DatumContainer as differential_dataflow::trace::implementations::containers::BatchContainer>::index
+            0.03  <mz_row_spine::bytes_container::BytesBatch>::try_push
+  0.22 cores  13.2%  progress: pointstamp propagation (Tracker)
+            0.04  <timely::progress::reachability::Tracker<mz_repr::timestamp::Timestamp>>::propagate_all
+            0.04  <timely::progress::frontier::MutableAntichain<mz_repr::timestamp::Timestamp>>::rebuild
+  0.14 cores   8.6%  introspection logging (timely/differential events)
+            0.01  <(columnar::primitive::duration::Durations<&[u64], &[u32]>, mz_compute::logging::compute::ComputeEventContainer<mz_compute::logging::compute::ExportCo
+            0.01  <mz_compute::logging::timely::DemuxHandler>::handle
+  0.11 cores   6.4%  other threads
+            0.07  ?
+            0.01  syscall
+  0.06 cores   3.4%  progress: other subgraph scheduling
+            0.02  <timely::progress::subgraph::Subgraph<mz_repr::timestamp::Timestamp, mz_repr::timestamp::Timestamp> as timely::scheduling::Schedule>::schedule
+            0.01  <timely::scheduling::activate::Activations>::for_extensions::<<timely::progress::subgraph::Subgraph<(), mz_timely_util::order::Partitioned<mz_storage_
+  0.04 cores   2.5%  progress: broadcast send/recv between workers
+            0.01  syscall
+            0.01  <std::sync::mpmc::list::Channel<timely::encoding::Bincode<(usize, usize, timely::progress::change_batch::ChangeBatch<(timely::progress::Location, mz_r
+  0.03 cores   1.9%  worker: outside step
+            0.01  <differential_dataflow::operators::arrange::agent::TraceAgent<differential_dataflow::trace::implementations::spine_fueled::Spine<mz_row_spine::arc_bat
+            0.00  <mz_compute::server::Config as mz_cluster::client::ClusterSpec>::run_worker
+  0.02 cores   1.1%  worker: communication (receive/flush)
+            0.00  syscall
+            0.00  core::slice::sort::unstable::quicksort::quicksort::<(usize, usize), <[(usize, usize)]>::sort_unstable_by_key<&[usize], <timely::scheduling::activate::
+  0.01 cores   0.7%  progress: frontier/changebatch maintenance
+            0.01  <timely::progress::change_batch::ChangeBatch<mz_repr::timestamp::Timestamp>>::compact
+            0.00  <timely::progress::change_batch::ChangeBatch<(timely::progress::Location, mz_repr::timestamp::Timestamp)>>::compact
+  0.01 cores   0.6%  worker: parked/waking
+            0.01  <timely::worker::Worker>::step_or_park
+            0.00  <core::iter::adapters::cloned::Cloned<core::slice::iter::Iter<(usize, usize)>> as core::iter::traits::iterator::Iterator>::try_fold::<(), core::iter::

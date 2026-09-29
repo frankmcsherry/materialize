@@ -40,6 +40,9 @@ Teardown: `$PSQL -f assets/teardown.sql`.
 * **iot** — devices, readings, threshold alerts
 * **clickstream** — sessions, page views, conversion funnel
 * **zoo** — zoo visits, ratings, shipments; three invariants at once
+* **fixed_income** — bonds, trades, positions, 100ms prices. See
+  [`demos/fixed-income`](demos/fixed-income/README.md) for a live trade desk
+  board built on it, and its [`PROMPT.md`](demos/fixed-income/PROMPT.md) recipe.
 
 Load more than one to see Materialize keep multiple data products in sync
 over the same shared identity space.

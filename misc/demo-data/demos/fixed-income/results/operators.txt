@@ -1,0 +1,137 @@
+# operators.py report, board.py with two cube traders plus three position panes, 100ms interval.
+
+## 800cc (16 workers)
+operators 2796: 2563 leaf, 233 subgraphs (regions + dataflow roots)
+leaf operator time 2.55 cores; subgraph self time (progress + scheduling children) 3.07 cores
+leaf schedulings 331,086/s; subgraph schedulings 820,890/s  (summed over workers)
+
+dataflow                                       ops regions leaf cores progress cores  ratio leaf sched/s records in/s
+materialize.public.board_by_trader             850      51      0.420          0.749    1.8       98,618      112,412
+materialize.public.board_leaf_primary_idx       78      10      0.524          0.324    0.6       36,444      503,027
+materialize.public.board_cube_by_mask          238      19      0.381          0.249    0.7       28,566      361,650
+materialize.public.blotter_primary_idx          93       7      0.302          0.265    0.9       25,671      183,538
+subscribe-t28616                               163       8      0.148          0.269    1.8       24,995        6,486
+subscribe-t28630                               163       8      0.129          0.265    2.1       25,028        6,486
+subscribe-t28646                               163       8      0.131          0.261    2.0       25,059        6,486
+materialize.public.board_hist_leaf_primary_i    36       7      0.255          0.123    0.5       14,373      140,034
+subscribe-t28598                               109       7      0.075          0.130    1.7       14,595        1,634
+materialize.public.positions_primary_idx        54       8      0.068          0.044    0.6        5,913          708
+materialize.public.prices_primary_idx           44       7      0.031          0.075    2.4        6,406        8,780
+materialize.public.bond_ratings_primary_idx     86      10      0.020          0.040    2.0        5,896           12
+materialize.public.seconds_primary_idx          50       9      0.014          0.035    2.4        2,884           39
+subscribe-t28614                                22       6      0.004          0.042   11.1        2,029        1,445
+subscribe-t28628                                22       6      0.004          0.038    9.1        2,017        5,959
+materialize.public.hours_primary_idx            50       9      0.006          0.036    6.2        2,928            0
+introspection-subscribe-t28581                  86       7      0.015          0.026    1.7        2,055        7,373
+subscribe-t28648                                22       6      0.004          0.036    8.8        2,016        8,245
+materialize.public.minutes_primary_idx          50       9      0.005          0.033    6.4        2,794            0
+materialize.public.days_primary_idx             37       9      0.013          0.024    1.9        1,838            0
+introspection-subscribe-t28577                  62      10      0.002          0.005    2.6          512           43
+introspection-subscribe-t28575                  34       6      0.001          0.002    2.4          224            0
+introspection-subscribe-t28579                  35       6      0.001          0.002    2.4          223            0
+99                                             249       0      0.000          0.000    inf            0            0
+
+all dataflows: 2563 leaf operators
+   1051 (41.0%)   0.380 cores     36,845 sched/s     522,590 rec/s  stateless plumbing (map, flat_map, concat, enter/leave, ...)
+         Concatenate×331, FlatMap×261, AsCollection×248, CollectionFlatMap×56, Leave×22, ExplodeOne×15
+    747 (29.1%)   0.135 cores     95,647 sched/s     373,432 rec/s  introspection / lifecycle
+         ArrangementSize×395, LogOperatorHydration (N)×190, StartSignal×66, Probe×48, InspectBatch×24, LogDataflowErrorsStream×13
+    485 (18.9%)   1.751 cores    155,044 sched/s     453,766 rec/s  stateful: arrange / reduce / join / topk
+         FormArrangementKey×69, Join×54, ArrangementFlatMap(scan)×47, Reduced TopK input×32, Arranged TopK input×32, LinearJoinKeyPreparation×20
+    199 ( 7.8%)   0.278 cores     37,327 sched/s         691 rec/s  error path
+         Arrange bundle err×31, AccumulableErrorCheck×15, Arrange errors×12, Distinct errors×12, ArrangeBy[[Column(N, "bond_id")]]-errors×12, Reduced Fallibly MinsMaxesHierarchical×11
+     70 ( 2.7%)   0.004 cores      3,433 sched/s           0 rec/s  sources / persist
+         txns_progress_frontiers(uN)×20, txns_progress_source(uN)×10, shard_source_descs(uN)×10, shard_source_fetch(uN)×10, shard_source_descs_return(uN)×10, persist_source::decode_and_mfp(uN)×10
+     11 ( 0.4%)   0.005 cores      2,791 sched/s       3,879 rec/s  sink / subscribe
+         subscribe-tN×11
+
+schedulings per worker per 100ms tick (16 workers), dataflow roots:
+    199.1  Dataflow: materialize.public.board_by_trader
+    142.6  Dataflow: materialize.public.board_leaf_primary_idx
+    112.7  Dataflow: materialize.public.blotter_primary_idx
+    106.9  Dataflow: materialize.public.board_cube_by_mask
+     96.3  Dataflow: subscribe-t28646
+     94.5  Dataflow: subscribe-t28630
+     93.4  Dataflow: subscribe-t28616
+     80.7  Dataflow: materialize.public.board_hist_leaf_primary_idx
+     54.0  Dataflow: subscribe-t28598
+     39.6  Dataflow: materialize.public.prices_primary_idx
+     31.0  Dataflow: subscribe-t28648
+     30.7  Dataflow: subscribe-t28628
+     30.3  Dataflow: subscribe-t28614
+     22.1  Dataflow: materialize.public.seconds_primary_idx
+     22.0  Dataflow: materialize.public.hours_primary_idx
+     21.3  Dataflow: materialize.public.minutes_primary_idx
+     19.1  Dataflow: materialize.public.positions_primary_idx
+     11.3  Dataflow: introspection-subscribe-t28581
+     11.1  Dataflow: materialize.public.bond_ratings_primary_idx
+     10.6  Dataflow: materialize.public.days_primary_idx
+      2.1  Dataflow: introspection-subscribe-t28577
+      1.1  Dataflow: introspection-subscribe-t28579
+      1.1  Dataflow: introspection-subscribe-t28575
+      0.0  Dataflow: oneshot-select-t28779
+
+## 200cc (4 workers)
+operators 2362: 2143 leaf, 219 subgraphs (regions + dataflow roots)
+leaf operator time 1.10 cores; subgraph self time (progress + scheduling children) 0.36 cores
+leaf schedulings 92,163/s; subgraph schedulings 124,992/s  (summed over workers)
+
+dataflow                                       ops regions leaf cores progress cores  ratio leaf sched/s records in/s
+materialize.public.board_leaf_primary_idx       78      10      0.279          0.028    0.1       10,656      457,370
+materialize.public.board_cube_by_mask          238      19      0.238          0.037    0.2        7,817      357,056
+materialize.public.board_by_trader             850      51      0.120          0.117    1.0       29,741       88,868
+materialize.public.blotter_primary_idx          93       7      0.143          0.030    0.2        8,107      181,627
+materialize.public.board_hist_leaf_primary_i    36       7      0.157          0.013    0.1        4,771      128,576
+subscribe-t29010                               163       8      0.036          0.033    0.9        7,944        5,567
+subscribe-t29026                               163       8      0.033          0.031    0.9        7,949        5,567
+materialize.public.positions_primary_idx        54       8      0.039          0.007    0.2        1,685          561
+subscribe-t28972                               109       7      0.019          0.021    1.1        5,548        1,540
+materialize.public.prices_primary_idx           44       7      0.009          0.008    0.9        1,604        8,370
+materialize.public.seconds_primary_idx          50       9      0.007          0.004    0.7          727           41
+materialize.public.bond_ratings_primary_idx     86      10      0.004          0.006    1.8        1,523           11
+materialize.public.days_primary_idx             37       9      0.005          0.003    0.7          455            0
+subscribe-t29022                                22       6      0.002          0.005    3.1          807        5,889
+subscribe-t29008                                22       6      0.001          0.006    4.3          809        1,399
+materialize.public.hours_primary_idx            50       9      0.001          0.004    4.0          694            0
+materialize.public.minutes_primary_idx          50       9      0.001          0.004    3.9          698            0
+introspection-subscribe-t28951                  86       7      0.001          0.002    1.3          409        1,451
+introspection-subscribe-t28947                  62      10      0.000          0.000    1.8          107            2
+introspection-subscribe-t28945                  34       6      0.000          0.000    2.0           55            0
+introspection-subscribe-t28949                  35       6      0.000          0.000    2.2           55            0
+
+all dataflows: 2143 leaf operators
+    869 (40.6%)   0.240 cores     11,418 sched/s     483,540 rec/s  stateless plumbing (map, flat_map, concat, enter/leave, ...)
+         Concatenate×275, FlatMap×219, AsCollection×201, CollectionFlatMap×48, Leave×18, ExplodeOne×12
+    648 (30.2%)   0.032 cores     25,815 sched/s     348,105 rec/s  introspection / lifecycle
+         ArrangementSize×320, LogOperatorHydration (N)×190, StartSignal×55, Probe×41, InspectBatch×21, LogDataflowErrorsStream×12
+    384 (17.9%)   0.732 cores     42,466 sched/s     410,234 rec/s  stateful: arrange / reduce / join / topk
+         FormArrangementKey×55, Join×42, ArrangementFlatMap(scan)×37, Reduced TopK input×24, Arranged TopK input×24, JoinStage×16
+    163 ( 7.6%)   0.089 cores     10,879 sched/s         191 rec/s  error path
+         Arrange bundle err×26, AccumulableErrorCheck×12, Reduced Fallibly MinsMaxesHierarchical×11, Arrange errors×9, Distinct errors×9, ArrangeBy[[Column(N, "bond_id")]]-errors×9
+     70 ( 3.3%)   0.001 cores        938 sched/s           0 rec/s  sources / persist
+         txns_progress_frontiers(uN)×20, shard_source_descs(uN)×10, shard_source_fetch(uN)×10, txns_progress_source(uN)×10, shard_source_descs_return(uN)×10, persist_source::decode_and_mfp(uN)×10
+      9 ( 0.4%)   0.001 cores        646 sched/s       1,827 rec/s  sink / subscribe
+         subscribe-tN×9
+
+schedulings per worker per 100ms tick (4 workers), dataflow roots:
+    121.1  Dataflow: materialize.public.board_by_trader
+    102.2  Dataflow: materialize.public.blotter_primary_idx
+     77.1  Dataflow: materialize.public.board_cube_by_mask
+     69.7  Dataflow: materialize.public.board_leaf_primary_idx
+     67.7  Dataflow: materialize.public.board_hist_leaf_primary_idx
+     46.3  Dataflow: subscribe-t29026
+     45.2  Dataflow: subscribe-t29010
+     38.7  Dataflow: subscribe-t28972
+     19.9  Dataflow: subscribe-t29022
+     19.0  Dataflow: materialize.public.prices_primary_idx
+     18.8  Dataflow: subscribe-t29008
+     10.7  Dataflow: materialize.public.seconds_primary_idx
+     10.5  Dataflow: materialize.public.positions_primary_idx
+     10.5  Dataflow: materialize.public.minutes_primary_idx
+      9.5  Dataflow: materialize.public.hours_primary_idx
+      5.1  Dataflow: materialize.public.days_primary_idx
+      5.1  Dataflow: materialize.public.bond_ratings_primary_idx
+      4.4  Dataflow: introspection-subscribe-t28951
+      0.7  Dataflow: introspection-subscribe-t28947
+      0.6  Dataflow: introspection-subscribe-t28945
+      0.6  Dataflow: introspection-subscribe-t28949

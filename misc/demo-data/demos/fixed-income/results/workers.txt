@@ -1,0 +1,33 @@
+# Replica size sweep: ALTER CLUSTER quickstart SET (SIZE = ...), board.py with two cube traders, then clicks.py --n 6.
+# 'process cores' is the compute clusterd's CPU from /proc; 'leaf-op' and 'dataflow-root' are mz_scheduling_elapsed sums.
+# Docker emulator v26.43.0, 18-core Apple silicon. 50cc/100cc/200cc/400cc/800cc = 1/2/4/8/16 workers.
+100cc  process cores 1.28   leaf-op cores 0.91   dataflow-root cores 1.07
+100cc  screen lag p50 111 max 248
+100cc  cube       n= 12  p50    80 ms  p90   126 ms  max   242 ms   (screen lag now 110 ms)
+100cc  cube+med   n= 12  p50  1236 ms  p90  1489 ms  max  1897 ms   (screen lag now 1167 ms)
+100cc  on demand  n= 12  p50    26 ms  p90    41 ms  max    65 ms   (screen lag now 95 ms)
+100cc  layout     n=  6  p50    40 ms  p90    52 ms  max    52 ms   (screen lag now 587 ms)
+50cc  process cores 0.91   leaf-op cores 0.76   dataflow-root cores 0.83
+50cc  screen lag p50 136 max 261
+50cc  cube       n= 12  p50   158 ms  p90   228 ms  max   263 ms   (screen lag now 156 ms)
+50cc  cube+med   n= 11  p50  5873 ms  p90  8075 ms  max  9262 ms   (screen lag now 3425 ms)
+50cc  on demand  n= 12  p50    24 ms  p90    30 ms  max    34 ms   (screen lag now 371 ms)
+50cc  layout     n=  6  p50    29 ms  p90    35 ms  max    50 ms   (screen lag now 624 ms)
+400cc  process cores 2.95   leaf-op cores 1.37   dataflow-root cores 2.26
+400cc  screen lag p50 97 max 237
+400cc  cube       n= 12  p50    90 ms  p90   199 ms  max   216 ms   (screen lag now 86 ms)
+400cc  cube+med   n= 12  p50   347 ms  p90   623 ms  max   657 ms   (screen lag now 299 ms)
+400cc  on demand  n= 12  p50    62 ms  p90    79 ms  max    87 ms   (screen lag now 66 ms)
+400cc  layout     n=  6  p50   106 ms  p90   118 ms  max   127 ms   (screen lag now 103 ms)
+800cc  process cores 6.17   leaf-op cores 2.18   dataflow-root cores 4.75
+800cc  screen lag p50 156 max 402
+800cc  cube       n= 12  p50   213 ms  p90   310 ms  max   395 ms   (screen lag now 248 ms)
+800cc  cube+med   n= 12  p50   662 ms  p90   833 ms  max  1116 ms   (screen lag now 490 ms)
+800cc  on demand  n= 12  p50    50 ms  p90   101 ms  max   115 ms   (screen lag now 152 ms)
+800cc  layout     n=  6  p50   141 ms  p90   192 ms  max   219 ms   (screen lag now 132 ms)
+200cc  process cores 1.78   leaf-op cores 1.20   dataflow-root cores 1.50
+200cc  screen lag p50 101 max 150
+200cc  cube       n= 12  p50   102 ms  p90   170 ms  max   386 ms   (screen lag now 51 ms)
+200cc  cube+med   n= 12  p50   386 ms  p90   514 ms  max   654 ms   (screen lag now 111 ms)
+200cc  on demand  n= 12  p50    27 ms  p90    30 ms  max    39 ms   (screen lag now 142 ms)
+200cc  layout     n=  6  p50    40 ms  p90    56 ms  max   123 ms   (screen lag now 118 ms)

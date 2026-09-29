@@ -1,0 +1,965 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FI Risk Board</title>
+<style>
+:root {
+  --bg: #0a0d12;
+  --panel: #10141b;
+  --panel-2: #151a23;
+  --line: #1e2530;
+  --line-2: #2a3340;
+  --text: #cfd6df;
+  --dim: #7a8594;
+  --faint: #4b5563;
+  --accent: #e8a33d;
+  --accent-soft: rgba(232, 163, 61, 0.14);
+  --pos: #4cc38a;
+  --neg: #f0605a;
+  --flash-up: rgba(76, 195, 138, 0.16);
+  --flash-down: rgba(240, 96, 90, 0.16);
+  --hot: #4cc38a;
+  --demand: #7aa2f7;
+  --sel: rgba(122, 162, 247, 0.16);
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+  font: 12px/1.35 var(--sans); }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
+input { font: inherit; color: inherit; }
+
+.app { display: grid; height: 100vh;
+  grid-template-rows: 38px 34px auto 1fr 26px;
+  grid-template-columns: 1fr 440px;
+  grid-template-areas: "top top" "pivot pivot" "strip strip" "grid side" "status status"; }
+
+/* top bar */
+.top { grid-area: top; display: flex; align-items: center; gap: 14px; padding: 0 12px;
+  background: var(--panel); border-bottom: 1px solid var(--line); }
+.brand { font-weight: 700; letter-spacing: .08em; color: var(--accent); font-size: 12px; white-space: nowrap; }
+.trader { display: flex; align-items: center; gap: 6px; color: var(--dim); }
+.trader input { width: 90px; background: var(--panel-2); border: 1px solid var(--line-2);
+  border-radius: 3px; padding: 2px 6px; color: var(--text); }
+.tabs { display: flex; gap: 2px; overflow-x: auto; flex: 1; min-width: 0; }
+.tab { padding: 5px 10px; border-radius: 3px 3px 0 0; color: var(--dim); white-space: nowrap;
+  border-bottom: 2px solid transparent; }
+.tab:hover { color: var(--text); }
+.tab.on { color: var(--text); border-bottom-color: var(--accent); }
+.tab { display: inline-flex; align-items: center; gap: 5px; }
+.tab .tag { font-size: 9px; padding: 0 4px; border-radius: 2px; letter-spacing: .04em;
+  border: 1px solid var(--hot); color: var(--hot); }
+.tab .tag.live { border-color: var(--demand); color: var(--demand); }
+.tab .mini { color: var(--faint); padding: 0 2px; font-size: 11px; }
+.tab .mini:hover { color: var(--accent); }
+.tab.new { color: var(--faint); }
+.tab.new:hover { color: var(--accent); }
+.live { display: flex; align-items: center; gap: 8px; font-family: var(--mono); white-space: nowrap; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--pos); box-shadow: 0 0 6px var(--pos); }
+.dot.warn { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+.dot.bad { background: var(--neg); box-shadow: 0 0 6px var(--neg); }
+.asof { color: var(--dim); }
+
+/* pivot bar */
+.pivot { grid-area: pivot; display: flex; align-items: center; gap: 16px; padding: 0 12px;
+  background: var(--panel); border-bottom: 1px solid var(--line); overflow-x: auto; }
+.zone { display: flex; align-items: center; gap: 5px; min-height: 26px; padding: 2px 4px;
+  border-radius: 4px; border: 1px dashed transparent; }
+.zone.drop { border-color: var(--accent); background: var(--accent-soft); }
+.zone-label { color: var(--faint); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; margin-right: 2px; }
+.chip { display: inline-flex; align-items: center; gap: 5px; padding: 2px 4px 2px 8px;
+  border-radius: 3px; background: var(--panel-2); border: 1px solid var(--line-2);
+  white-space: nowrap; cursor: grab; }
+.chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--hot); }
+.chip.demand::before { background: var(--demand); }
+.chip .x { color: var(--faint); padding: 0 3px; }
+.chip .x:hover { color: var(--neg); }
+.sep { color: var(--faint); }
+.empty-zone { color: var(--faint); font-style: italic; padding: 0 4px; }
+.vals { display: flex; gap: 3px; }
+.val { padding: 2px 7px; border-radius: 3px; border: 1px solid var(--line-2); color: var(--dim); white-space: nowrap; }
+.val.on { color: var(--text); background: var(--panel-2); border-color: var(--faint); }
+.val.heavy::after { content: " ◆"; color: var(--accent); font-size: 9px; }
+.fields-btn { margin-left: auto; padding: 3px 10px; border: 1px solid var(--line-2); border-radius: 3px; white-space: nowrap; }
+.fields-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* serving strip: what is answering this screen, and how long the last click took */
+.strip { grid-area: strip; border-bottom: 1px solid var(--line); background: var(--bg); }
+.strip-row { display: flex; align-items: center; gap: 12px; padding: 6px 12px; min-height: 40px; }
+.serve { font-weight: 700; letter-spacing: .08em; font-size: 11px; padding: 4px 10px; border-radius: 3px;
+  white-space: nowrap; border: 1px solid; }
+.serve.hot { color: var(--hot); border-color: var(--hot); background: rgba(76,195,138,.08); }
+.serve.live { color: var(--demand); border-color: var(--demand); background: rgba(122,162,247,.10); }
+.serve.err { color: var(--neg); border-color: var(--neg); }
+.serve-text { flex: 1; min-width: 0; color: var(--dim); }
+.serve-text b { color: var(--text); font-weight: 600; }
+.serve-text .big { font-family: var(--mono); font-size: 15px; color: var(--text); font-weight: 600; }
+.serve-text .why { display: block; font-size: 11px; color: var(--faint); margin-top: 1px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.strip label { color: var(--dim); white-space: nowrap; display: flex; align-items: center; gap: 5px; cursor: pointer; }
+.strip .tbtn { border: 1px solid var(--line-2); border-radius: 3px; padding: 3px 9px; color: var(--dim); white-space: nowrap; }
+.strip .tbtn.on, .strip .tbtn:hover { color: var(--accent); border-color: var(--accent); }
+.detail { display: none; grid-template-columns: 1fr 380px; gap: 12px; padding: 0 12px 10px; }
+.detail.open { display: grid; }
+.detail pre { margin: 0; max-height: 200px; overflow: auto; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 3px; padding: 8px; font: 11px/1.45 var(--mono); color: var(--text); white-space: pre-wrap; }
+.detail .hist { max-height: 200px; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 3px; }
+.detail .hist table { width: 100%; table-layout: fixed; }
+.detail .hist td { padding: 2px 8px; font-size: 11px; border-bottom: 1px solid var(--line);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.detail .hist td:nth-child(1) { width: 80px; } .detail .hist td:nth-child(2) { width: 46px; }
+.detail .hist td:nth-child(4) { width: 64px; text-align: right; }
+.detail .hist td:first-child { font-family: var(--mono); color: var(--faint); }
+.detail h5 { margin: 0 0 4px; font-size: 10px; color: var(--faint); letter-spacing: .08em; text-transform: uppercase; font-weight: 500; }
+.spin { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--demand); border-right-color: transparent;
+  border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -1px; margin-right: 6px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.custom { display: flex; gap: 6px; padding: 4px 10px 2px; }
+.custom input { flex: 1; background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 3px;
+  padding: 4px 8px; font-family: var(--mono); font-size: 11px; }
+.custom button { color: var(--dim); border: 1px solid var(--line-2); border-radius: 3px; padding: 0 8px; font-size: 11px; }
+.custom button:hover { color: var(--accent); border-color: var(--accent); }
+.examples { padding: 2px 10px 6px; display: flex; flex-direction: column; gap: 2px; }
+.examples button { text-align: left; font: 11px var(--mono); color: var(--demand); padding: 2px 0; }
+.examples button:hover { color: var(--accent); }
+.empty-grid { padding: 40px; color: var(--faint); font-family: var(--sans); text-align: center; }
+
+/* grid */
+.gridwrap { grid-area: grid; overflow: auto; position: relative; outline: none; }
+table { border-collapse: separate; border-spacing: 0; width: 100%; font-family: var(--mono); font-size: 12px; }
+thead th { position: sticky; top: 0; z-index: 2; background: var(--panel); color: var(--dim);
+  font-weight: 500; text-align: right; padding: 6px 10px; border-bottom: 1px solid var(--line-2);
+  white-space: nowrap; cursor: pointer; user-select: none; font-family: var(--sans); font-size: 11px; }
+thead th:first-child { text-align: left; }
+thead th:hover { color: var(--text); }
+thead th .arrow { color: var(--accent); }
+thead tr.group th { cursor: default; color: var(--faint); font-size: 10px; letter-spacing: .06em;
+  text-transform: uppercase; padding: 4px 10px 0; border-bottom: 0; }
+tbody td { padding: 3px 10px; text-align: right; border-bottom: 1px solid var(--line);
+  white-space: nowrap; font-variant-numeric: tabular-nums; }
+tbody td:first-child { text-align: left; font-family: var(--sans); }
+tbody tr { cursor: default; }
+tbody tr:hover td { background: rgba(255, 255, 255, 0.025); }
+tbody tr.sel td { background: var(--sel); }
+tbody tr.l0 td { font-weight: 600; background: var(--panel-2); }
+tbody tr.l0.sel td { background: var(--sel); }
+td.total { border-left: 1px solid var(--line-2); }
+.tw { display: inline-block; width: 14px; color: var(--dim); text-align: center; cursor: pointer; }
+.tw:hover { color: var(--accent); }
+.neg { color: var(--neg); }
+.na { color: var(--faint); }
+.gridwrap.loading tbody { opacity: .45; transition: opacity .15s; }
+.banner { position: sticky; left: 0; top: 0; }
+.overlay { position: absolute; top: 40px; left: 50%; transform: translateX(-50%); z-index: 5;
+  background: var(--panel-2); border: 1px solid var(--demand); color: var(--demand);
+  padding: 6px 12px; border-radius: 4px; font-family: var(--mono); display: none; }
+.gridwrap.loading .overlay { display: block; }
+
+/* side */
+.side { grid-area: side; display: grid; grid-template-rows: 1fr 260px; border-left: 1px solid var(--line);
+  background: var(--panel); min-height: 0; position: relative; }
+.pane { display: flex; flex-direction: column; min-height: 0; border-bottom: 1px solid var(--line); }
+.pane h3 { margin: 0; padding: 8px 10px; font-size: 11px; font-weight: 600; color: var(--dim);
+  letter-spacing: .06em; text-transform: uppercase; display: flex; gap: 8px; align-items: baseline;
+  border-bottom: 1px solid var(--line); }
+.pane h3 .sub { text-transform: none; letter-spacing: 0; color: var(--text); font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.pane h3 .ms { font-family: var(--mono); font-weight: 400; color: var(--faint); letter-spacing: 0; text-transform: none; }
+.pane .body { overflow: auto; flex: 1; }
+.pane table { font-size: 11px; }
+.pane thead th { padding: 4px 6px; font-size: 10px; cursor: default; }
+.pane tbody td { padding: 2px 6px; }
+.pane tbody td:first-child { font-family: var(--mono); }
+.side-b { color: var(--pos); } .side-s { color: var(--neg); }
+
+/* fields drawer */
+.drawer { position: absolute; inset: 0; background: var(--panel); z-index: 10; display: none;
+  flex-direction: column; border-left: 1px solid var(--line-2); }
+.drawer.open { display: flex; }
+.drawer header { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.drawer header input { flex: 1; background: var(--panel-2); border: 1px solid var(--line-2);
+  border-radius: 3px; padding: 4px 8px; }
+.drawer .list { overflow: auto; flex: 1; padding: 4px 0; }
+.drawer h4 { margin: 10px 10px 4px; font-size: 10px; color: var(--faint); letter-spacing: .08em; text-transform: uppercase; }
+.drawer .note { margin: 0 10px 6px; color: var(--dim); font-size: 11px; }
+.field { display: flex; align-items: center; gap: 8px; padding: 4px 10px; cursor: grab; }
+.field:hover { background: var(--panel-2); }
+.field .nm { flex: 1; }
+.field .kind { font-size: 9px; padding: 0 4px; border-radius: 2px; border: 1px solid var(--hot); color: var(--hot); }
+.field.demand .kind { border-color: var(--demand); color: var(--demand); }
+.field.tick .kind { border-color: var(--accent); color: var(--accent); }
+.field button { color: var(--dim); border: 1px solid var(--line-2); border-radius: 3px; padding: 0 6px; font-size: 11px; }
+.field button:hover { color: var(--accent); border-color: var(--accent); }
+.drawer footer { padding: 8px 10px; border-top: 1px solid var(--line); color: var(--dim); font-size: 11px; }
+
+/* status */
+.status { grid-area: status; display: flex; align-items: center; gap: 18px; padding: 0 12px;
+  background: var(--panel); border-top: 1px solid var(--line); font-family: var(--mono);
+  font-size: 11px; color: var(--dim); white-space: nowrap; overflow: hidden; }
+.badge { padding: 1px 6px; border-radius: 3px; border: 1px solid var(--hot); color: var(--hot); }
+.badge.demand { border-color: var(--demand); color: var(--demand); }
+.status b { color: var(--text); font-weight: 500; }
+.status .engine { margin-left: auto; cursor: help; }
+.pop { position: fixed; bottom: 30px; right: 12px; z-index: 20; background: var(--panel-2);
+  border: 1px solid var(--line-2); border-radius: 4px; padding: 8px 10px; display: none;
+  font-family: var(--mono); font-size: 11px; }
+.pop.open { display: block; }
+.pop table td { padding: 2px 8px; border: 0; }
+.pop .hint { font-family: var(--sans); color: var(--dim); max-width: 340px; white-space: normal; margin-top: 6px; }
+
+@media (max-width: 900px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: 38px 34px 1fr 300px 26px;
+    grid-template-areas: "top" "pivot" "grid" "side" "status"; }
+  .side { border-left: 0; border-top: 1px solid var(--line); grid-template-rows: 1fr; }
+  .side .tape { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="top">
+    <div class="brand">FI RISK BOARD</div>
+    <label class="trader">trader <input id="trader" spellcheck="false"></label>
+    <nav class="tabs" id="tabs"></nav>
+    <div class="live"><span class="dot" id="dot"></span><span id="lag">—</span><span class="asof" id="asof"></span></div>
+  </div>
+
+  <div class="pivot" id="pivot">
+    <div class="zone" data-zone="rows" id="zone-rows"><span class="zone-label">Rows</span></div>
+    <span class="sep">|</span>
+    <div class="zone" data-zone="across" id="zone-across"><span class="zone-label">Across</span></div>
+    <span class="sep">|</span>
+    <div class="zone"><span class="zone-label">Values</span><div class="vals" id="vals"></div></div>
+    <button class="fields-btn" id="fields-btn">Fields…</button>
+  </div>
+
+  <div class="strip" id="strip">
+    <div class="strip-row">
+      <span class="serve hot" id="serve">PRE-MAINTAINED</span>
+      <div class="serve-text" id="serve-text"></div>
+      <label title="Serve this layout with a fresh SUBSCRIBE even if the cube could answer it, to compare">
+        <input type="checkbox" id="force-live"> run as live query</label>
+      <button class="tbtn" id="detail-btn">SQL &amp; timings</button>
+    </div>
+    <div class="detail" id="detail">
+      <div><h5>What is answering this screen</h5><pre id="sql"></pre></div>
+      <div><h5>Click to numbers</h5><div class="hist"><table id="hist"><tbody></tbody></table></div></div>
+    </div>
+  </div>
+
+  <div class="gridwrap" id="gridwrap" tabindex="0">
+    <div class="overlay" id="overlay"></div>
+    <table id="grid"><thead></thead><tbody></tbody></table>
+  </div>
+
+  <aside class="side">
+    <section class="pane">
+      <h3>Positions <span class="sub" id="drill-title">All</span><span class="ms" id="drill-ms"></span></h3>
+      <div class="body"><table id="drill"><thead><tr>
+        <th style="text-align:left">Book</th><th style="text-align:left">Bond</th>
+        <th>Rtg</th><th>Tnr</th><th>Face mm</th><th>Px</th><th>MV mm</th><th>DV01 k</th>
+      </tr></thead><tbody></tbody></table></div>
+    </section>
+    <section class="pane tape">
+      <h3>Trade tape <span class="sub"></span><span class="ms">all books</span></h3>
+      <div class="body"><table id="tape"><tbody></tbody></table></div>
+    </section>
+    <div class="drawer" id="drawer">
+      <header><input id="field-search" placeholder="Search fields…" spellcheck="false"><button id="drawer-close">✕</button></header>
+      <div class="list" id="field-list"></div>
+      <footer>Drag a field onto Rows or Across, or use the buttons.
+        <span style="color:var(--hot)">●</span> pre-maintained in the shared cube: a click writes a row.
+        <span style="color:var(--demand)">●</span> live: a click starts a new SUBSCRIBE over the blotter.</footer>
+    </div>
+  </aside>
+
+  <div class="status" id="status">
+    <span id="updates"></span>
+    <span class="engine" id="engine">engine —</span>
+  </div>
+</div>
+<div class="pop" id="pop"></div>
+
+<script>
+"use strict";
+
+// ---------------------------------------------------------------------------
+// Vocabulary
+// ---------------------------------------------------------------------------
+const DIMS = {
+  business_group: "Business group", currency: "Currency", sector: "Sector",
+  grade: "Rating grade", tenor: "Tenor bucket",
+  book: "Book", issuer: "Issuer", bond: "Bond", isin: "ISIN", rating: "Rating (notch)",
+  seniority: "Seniority", day_count: "Day count", coupon_freq: "Coupon frequency",
+  coupon_band: "Coupon band", maturity_year: "Maturity year", duration_band: "Duration band",
+  issue_size: "Issue size", structure: "Call structure",
+  side: "Long / short", size_bucket: "Position size", price_band: "Price band",
+};
+const TICKING = ["side", "size_bucket", "price_band"];
+const EXAMPLES = [
+  ["CASE WHEN price >= 100 THEN 'Premium' ELSE 'Discount' END", "priced above or below par"],
+  ["left(issuer, 9)", "issuer family (first 9 characters)"],
+  ["currency || ' ' || grade", "currency and grade as one key"],
+  ["CASE WHEN coupon > 5 AND grade IN ('BB', 'B') THEN 'High-coupon HY' ELSE 'Other' END", "an ad hoc screen"],
+  ["(extract(year FROM maturity)::int / 5 * 5)::text || 's'", "maturity by half-decade"],
+];
+const CUSTOM = "expr:";
+const CHILD_SHOW = 200;  // rows drawn per parent; the server sends at most 300
+const dimLabel = d => DIMS[d] || (d.startsWith(CUSTOM) ? d.slice(CUSTOM.length) : d);
+const short = d => { const s = dimLabel(d); return s.length > 32 ? s.slice(0, 30) + "…" : s; };
+const HOT = ["business_group", "currency", "sector", "grade", "tenor"];
+const MEASURES = {
+  market_value: { label: "MV", unit: "mm", title: "Market value, local currency, millions (no FX)", fmt: v => fx(v / 1e6, 1) },
+  dv01:         { label: "DV01", unit: "k", title: "Dollar value of a basis point, thousands", fmt: v => fx(v / 1e3, 1) },
+  face:         { label: "Face", unit: "mm", title: "Net face amount, millions", fmt: v => fx(v / 1e6, 1) },
+  n:            { label: "Positions", unit: "", title: "Open positions (book × bond)", fmt: v => fx(v, 0) },
+  avg_price:    { label: "Avg px", unit: "", title: "Average price across positions", fmt: v => fx(v, 3) },
+  min_price:    { label: "Min px", unit: "", title: "Lowest price in the node (maintained only while shown)", fmt: v => fx(v, 3), heavy: true },
+  max_price:    { label: "Max px", unit: "", title: "Highest price in the node (maintained only while shown)", fmt: v => fx(v, 3), heavy: true },
+  median_mv:    { label: "Median MV", unit: "k", title: "Median position MV, from histograms, ±1.6% (shared cube only; maintained only while shown)", fmt: v => fx(v / 1e3, 0), heavy: true },
+};
+const ORDER = {
+  tenor: ["2Y", "5Y", "10Y", "30Y"],
+  grade: ["AAA", "AA", "A", "BBB", "BB", "B"],
+  rating: ["AAA","AA+","AA","AA-","A+","A","A-","BBB+","BBB","BBB-","BB+","BB","BB-","B+","B","B-"],
+  currency: ["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF", "SEK"],
+};
+const PRESETS = [
+  { name: "Desk risk", rows: ["business_group", "currency", "sector"], across: null,
+    measures: ["market_value", "dv01", "face", "n"], expanded: [["Rates"]] },
+  { name: "Tenor ladder", rows: ["business_group", "currency"], across: "tenor",
+    measures: ["dv01"], expanded: [["Rates"], ["IG Credit"]] },
+  { name: "Ccy × group", rows: ["business_group"], across: "currency",
+    measures: ["market_value"], expanded: [] },
+  { name: "Credit quality", rows: ["grade", "sector"], across: null,
+    measures: ["market_value", "dv01", "avg_price", "min_price", "max_price", "median_mv"], expanded: [["BBB"]] },
+  { name: "Issuers", rows: ["issuer"], across: null,
+    measures: ["market_value", "dv01", "face", "n"], expanded: [], sort: { col: "dv01", dir: -1 } },
+  { name: "Books", rows: ["book", "bond"], across: null,
+    measures: ["market_value", "face", "dv01", "avg_price"], expanded: [] },
+  { name: "Seniority × tenor", rows: ["seniority", "business_group"], across: "tenor",
+    measures: ["dv01"], expanded: [] },
+];
+
+function fx(v, dp) {
+  if (v === null || v === undefined || Number.isNaN(v)) return "";
+  return v.toLocaleString("en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp });
+}
+function el(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === "class") e.className = v; else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+    else if (v !== null && v !== undefined) e.setAttribute(k, v);
+  }
+  for (const k of kids) if (k !== null && k !== undefined) e.append(k);
+  return e;
+}
+const isHot = d => HOT.includes(d);
+const keyOf = path => path.join("\u0001");
+function naturalCmp(dim) {
+  const o = ORDER[dim];
+  return (a, b) => {
+    if (o) { const ia = o.indexOf(a), ib = o.indexOf(b); if (ia >= 0 && ib >= 0) return ia - ib; }
+    return String(a).localeCompare(String(b), undefined, { numeric: true });
+  };
+}
+
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+const params = new URLSearchParams(location.search);
+const trader = params.get("trader") || "alice";
+document.getElementById("trader").value = trader;
+document.getElementById("trader").addEventListener("change", e => {
+  const p = new URLSearchParams(location.search); p.set("trader", e.target.value.trim() || "alice");
+  location.search = p.toString();
+});
+
+// Each tab keeps its own layout, edits included, per trader in this browser.
+// Presets can be reset; views made with "+ New view" can be closed.
+const clone = v => JSON.parse(JSON.stringify(v));
+let views = PRESETS.map((v, i) => ({ ...clone(v), preset: i }));
+try {
+  if (params.has("reset")) { localStorage.removeItem("board.views." + trader); localStorage.removeItem("board.view." + trader); }
+  const saved = JSON.parse(localStorage.getItem("board.views." + trader) || "null");
+  if (Array.isArray(saved) && saved.length) views = saved;
+} catch (e) {}
+function saveViews() { try { localStorage.setItem("board.views." + trader, JSON.stringify(views)); } catch (e) {} }
+const isLive = v => v.force_live || !v.rows.length || [...v.rows, v.across].some(d => d && !isHot(d));
+const isModified = v => v.preset !== null && v.preset !== undefined &&
+  JSON.stringify([v.rows, v.across, v.measures, !!v.force_live]) !==
+  JSON.stringify([PRESETS[v.preset].rows, PRESETS[v.preset].across, PRESETS[v.preset].measures, false]);
+
+let layout = null;          // the current tab's layout
+let frame = null;           // last frame from the server
+let viewIndex = 0;
+let sort = { col: null, dir: -1 };
+let selectedKey = "";
+const expandedLocal = new Set();
+
+function post(url, body) {
+  return fetch(url, { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ trader, ...body }) });
+}
+function pushLayout() {
+  post("/layout", { rows: layout.rows, across: layout.across, measures: layout.measures,
+    force_live: !!layout.force_live, label: layout.rows.map(short).join(" › ") || "total only",
+    expanded: [...expandedLocal].map(k => k.split("\u0001")) });
+  selectedKey = "";
+  document.getElementById("force-live").checked = !!layout.force_live;
+  renderPivot();
+}
+function loadView(i) {
+  viewIndex = i;
+  layout = views[i];
+  expandedLocal.clear();
+  for (const p of layout.expanded || []) expandedLocal.add(keyOf(p));
+  sort = layout.sort ? { ...layout.sort } : { col: null, dir: -1 };
+  try { localStorage.setItem("board.view." + trader, String(i)); } catch (e) {}
+  pushLayout();
+  renderTabs();
+}
+function edit(fn) {
+  fn(layout);
+  layout.rows = layout.rows.filter((d, i, a) => a.indexOf(d) === i).slice(0, 5);
+  if (layout.rows.includes(layout.across)) layout.across = null;
+  if (!layout.measures.length) layout.measures = ["market_value"];
+  // Expanded paths only make sense for the same leading dimensions.
+  expandedLocal.clear();
+  layout.expanded = [];
+  saveViews();
+  pushLayout();
+  renderTabs();
+}
+function newView() {
+  const n = views.filter(v => v.preset === null || v.preset === undefined).length + 1;
+  views.push({ name: `My view ${n}`, rows: [], across: null, measures: ["market_value", "dv01", "n"],
+    expanded: [], preset: null });
+  saveViews();
+  loadView(views.length - 1);
+  drawer.classList.add("open"); renderFields();
+  document.getElementById("field-search").focus();
+}
+function resetView(i) {
+  views[i] = { ...clone(PRESETS[views[i].preset]), preset: views[i].preset };
+  saveViews(); loadView(i);
+}
+function closeView(i) {
+  views.splice(i, 1); saveViews();
+  loadView(Math.max(0, Math.min(i, views.length - 1)));
+}
+function renameView(i) {
+  const name = prompt("Name this view", views[i].name);
+  if (name && name.trim()) { views[i].name = name.trim(); saveViews(); renderTabs(); }
+}
+
+// ---------------------------------------------------------------------------
+// Tabs, pivot bar, fields
+// ---------------------------------------------------------------------------
+function renderTabs() {
+  const tabs = document.getElementById("tabs");
+  const stop = fn => e => { e.stopPropagation(); fn(); };
+  tabs.replaceChildren(...views.map((v, i) => {
+    const live = isLive(v), mod = isModified(v), custom = v.preset === null || v.preset === undefined;
+    return el("button", { class: "tab" + (i === viewIndex ? " on" : ""), onclick: () => loadView(i),
+      ondblclick: () => renameView(i),
+      title: (live ? "LIVE: opening this starts a SUBSCRIBE for this view" : "CUBE: served from the pre-maintained shared view") +
+        (mod ? " · edited (↺ resets)" : "") + " · double-click to rename" },
+      v.name + (mod ? " *" : ""),
+      el("span", { class: "tag" + (live ? " live" : "") }, live ? "LIVE" : "CUBE"),
+      mod ? el("span", { class: "mini", title: "Reset to the saved preset", onclick: stop(() => resetView(i)) }, "↺") : null,
+      custom ? el("span", { class: "mini", title: "Close this view", onclick: stop(() => closeView(i)) }, "×") : null);
+  }), el("button", { class: "tab new", onclick: newView, title: "Start an empty view and pick its fields" }, "+ New view"));
+}
+
+let drag = null;  // { dim, from: "rows"|"across"|"fields", index }
+function chip(dim, zone, index) {
+  const c = el("span", { class: "chip" + (isHot(dim) ? "" : " demand"), draggable: "true",
+    title: isHot(dim) ? "Pre-maintained in the shared cube" : "Live: grouping on this starts a SUBSCRIBE" },
+    short(dim),
+    el("button", { class: "x", title: "Remove", onclick: e => { e.stopPropagation();
+      edit(l => { if (zone === "rows") l.rows.splice(index, 1); else l.across = null; }); } }, "×"));
+  c.addEventListener("dragstart", e => { drag = { dim, from: zone, index }; e.dataTransfer.setData("text/plain", dim); });
+  c.dataset.index = index;
+  return c;
+}
+function renderPivot() {
+  const rows = document.getElementById("zone-rows");
+  const across = document.getElementById("zone-across");
+  rows.replaceChildren(el("span", { class: "zone-label" }, "Rows"),
+    ...layout.rows.flatMap((d, i) => i ? [el("span", { class: "sep" }, "›"), chip(d, "rows", i)] : [chip(d, "rows", i)]));
+  if (!layout.rows.length) rows.append(el("span", { class: "empty-zone" }, "drop a field, or open Fields…"));
+  across.replaceChildren(el("span", { class: "zone-label" }, "Across"),
+    layout.across ? chip(layout.across, "across", 0) : el("span", { class: "empty-zone" }, "none"));
+  const vals = document.getElementById("vals");
+  vals.replaceChildren(...Object.entries(MEASURES).map(([m, spec]) => {
+    const on = layout.measures.includes(m);
+    return el("button", { class: "val" + (on ? " on" : "") + (spec.heavy ? " heavy" : ""), title: spec.title,
+      onclick: () => edit(l => { l.measures = on ? l.measures.filter(x => x !== m) : [...l.measures, m]; }) },
+      spec.label);
+  }));
+  if (layout.across) vals.append(el("span", { class: "empty-zone", title: "With a dimension across, the grid shows the first value" },
+    "across shows " + MEASURES[layout.measures[0]].label));
+}
+for (const zone of ["rows", "across"]) {
+  const z = document.getElementById("zone-" + zone);
+  z.addEventListener("dragover", e => { e.preventDefault(); z.classList.add("drop"); });
+  z.addEventListener("dragleave", () => z.classList.remove("drop"));
+  z.addEventListener("drop", e => {
+    e.preventDefault(); z.classList.remove("drop");
+    if (!drag) return;
+    const d = drag; drag = null;
+    const target = e.target.closest(".chip");
+    edit(l => {
+      if (d.from === "rows") l.rows.splice(d.index, 1);
+      if (d.from === "across") l.across = null;
+      if (zone === "across") { if (l.across && d.from === "rows") l.rows.splice(d.index, 0, l.across); l.across = d.dim; l.rows = l.rows.filter(x => x !== d.dim); }
+      else {
+        let at = target && target.parentNode === z ? +target.dataset.index : l.rows.length;
+        if (d.from === "rows" && d.index < at) at -= 1;  // already removed above
+        l.rows = l.rows.filter(x => x !== d.dim);
+        l.rows.splice(Math.min(at, l.rows.length), 0, d.dim);
+      }
+    });
+  });
+}
+
+const drawer = document.getElementById("drawer");
+document.getElementById("fields-btn").onclick = () => { drawer.classList.toggle("open"); renderFields(); document.getElementById("field-search").focus(); };
+document.getElementById("drawer-close").onclick = () => drawer.classList.remove("open");
+document.getElementById("field-search").addEventListener("input", renderFields);
+function addRows(d) { edit(l => { l.rows = [...l.rows.filter(x => x !== d), d]; }); }
+function addAcross(d) { edit(l => { l.across = d; l.rows = l.rows.filter(x => x !== d); }); }
+function renderFields() {
+  const q = document.getElementById("field-search").value.toLowerCase();
+  const match = d => !q || d.includes(q) || (DIMS[d] || "").toLowerCase().includes(q);
+  const item = d => {
+    const tick = TICKING.includes(d);
+    const f = el("div", { class: "field" + (isHot(d) ? "" : " demand") + (tick ? " tick" : ""), draggable: "true" },
+      el("span", { class: "nm" }, DIMS[d]), el("span", { class: "kind" }, isHot(d) ? "CUBE" : tick ? "LIVE · TICKING" : "LIVE"),
+      el("button", { onclick: () => addRows(d) }, "+ rows"),
+      el("button", { onclick: () => addAcross(d) }, "across"));
+    f.addEventListener("dragstart", e => { drag = { dim: d, from: "fields" }; e.dataTransfer.setData("text/plain", d); });
+    return f;
+  };
+  const hot = Object.keys(DIMS).filter(d => isHot(d) && match(d));
+  const ref = Object.keys(DIMS).filter(d => !isHot(d) && !TICKING.includes(d) && match(d));
+  const tick = TICKING.filter(match);
+  const input = el("input", { placeholder: "any SQL expression over blotter columns", spellcheck: "false", id: "custom-expr" });
+  const useExpr = fn => () => { const e = input.value.trim(); if (e) fn(CUSTOM + e); };
+  document.getElementById("field-list").replaceChildren(
+    el("h4", {}, "Pre-maintained · shared cube"),
+    el("p", { class: "note" }, "Only these five are kept up to date ahead of time, for every trader. A click on a layout using only these writes a row to a table."),
+    ...hot.map(item),
+    el("h4", {}, "Live · reference data"),
+    el("p", { class: "note" }, "Nothing is kept for these. Using one starts a SUBSCRIBE over the 88k-row blotter when you click, and the strip above the grid times it."),
+    ...ref.map(item),
+    el("h4", {}, "Live · moves with trades and prices"),
+    el("p", { class: "note" }, "Computed from the position or its price, so positions change groups as the market ticks."),
+    ...tick.map(item),
+    el("h4", {}, "Live · your own expression"),
+    el("p", { class: "note" }, "Name any grouping. It becomes a GROUP BY on this SQL, so it can't have been prepared. Columns: business_group, book, bond, isin, issuer, currency, sector, rating, grade, seniority, coupon, coupon_freq, day_count, maturity, benchmark, duration, issue_size, callable, quantity, price, market_value, dv01."),
+    el("div", { class: "custom" }, input,
+      el("button", { onclick: useExpr(addRows) }, "+ rows"), el("button", { onclick: useExpr(addAcross) }, "across")),
+    el("div", { class: "examples" }, ...EXAMPLES.map(([x, why]) =>
+      el("button", { title: why, onclick: () => { input.value = x; input.focus(); } }, x))),
+    el("h4", {}, "Not shown"),
+    el("p", { class: "note" }, "This synthetic blotter has 22 columns. A real one with hundreds would list them here: most are measures or display-only, a few dozen are dimensions anyone groups by, and those decide what to pre-maintain."));
+}
+
+// ---------------------------------------------------------------------------
+// Grid
+// ---------------------------------------------------------------------------
+const gridwrap = document.getElementById("gridwrap");
+const thead = document.querySelector("#grid thead");
+const tbody = document.querySelector("#grid tbody");
+const rowEls = new Map();   // key -> { tr, cells: Map(col -> {td, v}) }
+let headSig = "";
+let visibleOrder = [];
+
+function columns(f) {
+  const L = f.layout;
+  if (L.across) {
+    const m = L.measures[0] || "market_value";
+    const vals = [...new Set(f.rows.filter(r => r.across).map(r => r.across))].sort(naturalCmp(L.across));
+    return { mode: "across", measure: m, cols: [...vals.map(v => ({ id: "x:" + v, label: v, across: v, measure: m })),
+      { id: "total", label: "Total", measure: m, total: true }] };
+  }
+  return { mode: "flat", cols: L.measures.map(m => ({ id: m, label: MEASURES[m].label + (MEASURES[m].unit ? " " + MEASURES[m].unit : ""), measure: m, title: MEASURES[m].title })) };
+}
+
+function renderHead(f, spec) {
+  const L = f.layout;
+  const sig = JSON.stringify([L.rows, L.across, spec.cols.map(c => c.id), sort, (f.limits || {}).across_values]);
+  if (sig === headSig) return;
+  headSig = sig;
+  const arrow = id => sort.col === id ? el("span", { class: "arrow" }, sort.dir < 0 ? " ▼" : " ▲") : null;
+  const th = (id, label, title) => el("th", { title, onclick: () => {
+    sort = sort.col === id ? { col: id, dir: -sort.dir } : { col: id, dir: id === "label" ? 1 : -1 };
+    layout.sort = sort; saveViews();
+    headSig = ""; render(); } }, label, arrow(id));
+  const main = el("tr", {}, th("label", L.rows.map(short).join(" › ") || "Total"),
+    ...spec.cols.map(c => th(c.id, c.label, c.title)));
+  if (spec.mode === "across") {
+    const m = MEASURES[spec.measure];
+    const lim = f.limits || {};
+    const capped = lim.across_values > lim.across_shown
+      ? ` · the ${lim.across_shown} largest of ${fx(lim.across_values, 0)} values, by |${m.label}|` : "";
+    const g = el("tr", { class: "group" }, el("th", {}, ""), el("th", { colspan: spec.cols.length, style: "text-align:left" },
+      `${m.label}${m.unit ? " (" + m.unit + ")" : ""} by ${short(L.across)}${capped}`));
+    thead.replaceChildren(g, main);
+  } else thead.replaceChildren(main);
+  for (const r of rowEls.values()) r.tr.remove();
+  rowEls.clear();
+}
+
+function orderRows(f, spec) {
+  const L = f.layout;
+  const nodes = new Map();   // key -> { row, cells: {}, kids: [] }
+  for (const r of f.rows) {
+    const k = keyOf(r.path);
+    let n = nodes.get(k);
+    if (!n) nodes.set(k, n = { path: r.path, level: r.level, row: null, cells: {} });
+    if (r.across) n.cells[r.across] = r; else n.row = r;
+  }
+  const kids = new Map();
+  for (const [k, n] of nodes) {
+    if (!n.row) continue;
+    if (n.level === 0) continue;
+    const pk = keyOf(n.path.slice(0, -1));
+    if (!kids.has(pk)) kids.set(pk, []);
+    kids.get(pk).push(n);
+  }
+  const val = (n, col) => {
+    const c = spec.cols.find(x => x.id === col);
+    if (!c) return null;
+    const r = c.across ? n.cells[c.across] : n.row;
+    return r ? r[c.measure] : null;
+  };
+  const cmpFor = level => {
+    if (!sort.col) return (a, b) => naturalCmp(L.rows[level - 1])(a.path[level - 1], b.path[level - 1]);
+    if (sort.col === "label") return (a, b) => sort.dir * naturalCmp(L.rows[level - 1])(a.path[level - 1], b.path[level - 1]);
+    return (a, b) => {
+      const va = val(a, sort.col), vb = val(b, sort.col);
+      return sort.dir * ((va ?? -Infinity) - (vb ?? -Infinity));
+    };
+  };
+  const out = [];
+  const root = nodes.get("");
+  const hidden = (f.limits && f.limits.hidden) || {};
+  const walk = n => {
+    out.push(n);
+    const pk = keyOf(n.path);
+    const ks = kids.get(pk);
+    if (ks && expandedLocal.has(pk) || (n.level === 0 && ks)) {
+      ks.sort(cmpFor(n.level + 1));
+      // Draw a screenful per parent; the rest is one line saying how many.
+      ks.slice(0, CHILD_SHOW).forEach(walk);
+      const more = Math.max(0, ks.length - CHILD_SHOW) + (hidden[pk] || 0);
+      if (more) out.push({ more, level: n.level + 1, path: [...n.path, "\u0002more"], row: null, cells: {} });
+    }
+  };
+  if (root && root.row) walk(root);
+  return out;
+}
+
+function flash(td, up) {
+  td.animate([{ backgroundColor: up ? "var(--flash-up)" : "var(--flash-down)" }, { backgroundColor: "transparent" }],
+    { duration: 600, easing: "ease-out" });
+}
+
+function render() {
+  const f = frame;
+  if (!f || !layout) return;
+  const empty = document.getElementById("empty-grid");
+  if (empty) empty.remove();
+  if (!layout.rows.length && !f.rows.length) {
+    gridwrap.append(el("div", { class: "empty-grid", id: "empty-grid" },
+      "Empty view. Open Fields… and add something to Rows."));
+  }
+  const spec = columns(f);
+  renderHead(f, spec);
+  const nodes = orderRows(f, spec);
+  const L = f.layout;
+  const depth = L.rows.length;
+  // Heat scale for cross-tabs: largest |value| among visible cells.
+  let maxAbs = 0;
+  if (spec.mode === "across") for (const n of nodes) for (const c of Object.values(n.cells)) maxAbs = Math.max(maxAbs, Math.abs(c[spec.measure] || 0));
+  const seen = new Set();
+  let prev = null;
+  for (const n of nodes) {
+    const k = keyOf(n.path);
+    seen.add(k);
+    let r = rowEls.get(k);
+    if (!r) {
+      const tr = el("tr", {});
+      const label = el("td", {});
+      tr.append(label);
+      if (!n.more) {
+        tr.addEventListener("click", e => {
+          if (e.target.classList.contains("tw")) return;
+          select(n.path);
+        });
+        tr.addEventListener("dblclick", () => toggle(n.path));
+      }
+      r = { tr, label, cells: new Map(), labelSig: "" };
+      for (const c of spec.cols) {
+        const td = el("td", { class: c.total ? "total" : "" });
+        tr.append(td);
+        r.cells.set(c.id, { td, v: undefined });
+      }
+      rowEls.set(k, r);
+    }
+    r.path = n.path;
+    if (n.more) {
+      const sig = "more|" + n.more;
+      if (r.labelSig !== sig) {
+        r.labelSig = sig;
+        r.label.replaceChildren(el("span", { style: `display:inline-block;width:${Math.max(0, n.level - 1) * 16 + 14}px` }),
+          el("span", { class: "na" }, `… ${fx(n.more, 0)} more, not drawn. Sort by a column to bring others up, or group by something coarser.`));
+      }
+      r.tr.className = "more";
+      const want = prev ? prev.nextSibling : tbody.firstChild;
+      if (want !== r.tr) tbody.insertBefore(r.tr, want);
+      prev = r.tr;
+      continue;
+    }
+    const canExpand = n.level < depth && n.level > 0;
+    const open = expandedLocal.has(k);
+    const labelSig = [open, canExpand, n.row && n.row.n].join("|");
+    if (labelSig !== r.labelSig) {
+      r.labelSig = labelSig;
+      const name = n.level === 0 ? "All positions" : n.path[n.level - 1];
+      r.label.replaceChildren(
+        el("span", { style: `display:inline-block;width:${Math.max(0, n.level - 1) * 16}px` }),
+        canExpand ? el("span", { class: "tw", onclick: e => { e.stopPropagation(); toggle(n.path); } }, open ? "▾" : "▸")
+                  : el("span", { class: "tw" }, n.level === 0 ? "" : "·"),
+        name);
+    }
+    r.tr.className = `l${n.level}` + (k === selectedKey ? " sel" : "");
+    for (const c of spec.cols) {
+      const cell = r.cells.get(c.id);
+      const src = c.across ? n.cells[c.across] : n.row;
+      const v = src ? src[c.measure] : null;
+      if (v !== cell.v) {
+        const spec_m = MEASURES[c.measure];
+        if (v === null || v === undefined) {
+          cell.td.textContent = src && spec_m.heavy && f.mode !== "hot" && c.measure === "median_mv" ? "n/a" : "";
+          cell.td.className = (c.total ? "total " : "") + "na";
+        } else {
+          const text = spec_m.fmt(v);
+          // Flash only when what the trader reads changes, not on every tick underneath.
+          // Flash moves of more than 0.25%; every tick is noise when all cells tick.
+          if (text !== cell.td.textContent && cell.v && !f.loading && Math.abs(v - cell.v) > 0.0025 * Math.abs(cell.v)) flash(cell.td, v > cell.v);
+          cell.td.textContent = text;
+          cell.td.className = (c.total ? "total" : "") + (v < 0 ? " neg" : "");
+        }
+        cell.v = v;
+      }
+      if (spec.mode === "across" && !c.total && maxAbs > 0 && v) {
+        const a = Math.min(1, Math.abs(v) / maxAbs) * 0.22;
+        cell.td.style.boxShadow = `inset 0 0 0 999px ${v < 0 ? `rgba(240,96,90,${a})` : `rgba(76,195,138,${a})`}`;
+      } else if (cell.td.style.boxShadow) cell.td.style.boxShadow = "";
+    }
+    // Keep DOM order equal to display order, moving only what moved.
+    const want = prev ? prev.nextSibling : tbody.firstChild;
+    if (want !== r.tr) tbody.insertBefore(r.tr, want);
+    prev = r.tr;
+  }
+  for (const [k, r] of rowEls) if (!seen.has(k)) { r.tr.remove(); rowEls.delete(k); }
+  visibleOrder = nodes.filter(n => !n.more).map(n => n.path);
+}
+
+function toggle(path) {
+  const k = keyOf(path);
+  if (expandedLocal.has(k)) { for (const e of [...expandedLocal]) if (e === k || e.startsWith(k + "\u0001")) expandedLocal.delete(e); }
+  else expandedLocal.add(k);
+  layout.expanded = [...expandedLocal].map(x => x.split("\u0001"));
+  saveViews();
+  post("/toggle", { path });
+  render();
+}
+function select(path) {
+  selectedKey = keyOf(path);
+  post("/select", { path });
+  render();
+}
+gridwrap.addEventListener("keydown", e => {
+  const i = visibleOrder.findIndex(p => keyOf(p) === selectedKey);
+  const cur = visibleOrder[i];
+  const depth = layout.rows.length;
+  if (e.key === "ArrowDown" && i < visibleOrder.length - 1) select(visibleOrder[i + 1]);
+  else if (e.key === "ArrowUp" && i > 0) select(visibleOrder[i - 1]);
+  else if (e.key === "ArrowRight" && cur && cur.length && cur.length < depth && !expandedLocal.has(keyOf(cur))) toggle(cur);
+  else if (e.key === "ArrowLeft" && cur && cur.length) {
+    if (expandedLocal.has(keyOf(cur))) toggle(cur); else select(cur.slice(0, -1));
+  } else if (e.key === "Enter" && cur && cur.length && cur.length < depth) toggle(cur);
+  else return;
+  e.preventDefault();
+  const r = rowEls.get(selectedKey); if (r) r.tr.scrollIntoView({ block: "nearest" });
+});
+
+// ---------------------------------------------------------------------------
+// Side panes and status
+// ---------------------------------------------------------------------------
+function renderDrill(f) {
+  const d = f.drill;
+  const L = f.layout;
+  document.getElementById("drill-title").textContent = d.path.length ? d.path.join(" › ") : "All";
+  document.getElementById("drill-ms").textContent = d.ready_ms ? `top 30 by size · ${d.ready_ms} ms` : "starting…";
+  const rows = [...d.rows].sort((a, b) => Math.abs(b.quantity) - Math.abs(a.quantity));
+  const tb = document.querySelector("#drill tbody");
+  const cell = (v, cls) => el("td", { class: cls || "" }, v);
+  tb.replaceChildren(...rows.map(r => el("tr", {},
+    cell(r.book.replace("BOOK-", "B")), el("td", { style: "text-align:left", title: r.issuer }, r.bond),
+    cell(r.rating), cell(r.tenor), cell(fx(r.quantity / 1e6, 1), r.quantity < 0 ? "neg" : ""), cell(fx(r.price, 3)),
+    cell(fx(r.market_value / 1e6, 2), r.market_value < 0 ? "neg" : ""), cell(fx(r.dv01 / 1e3, 2), r.dv01 < 0 ? "neg" : ""))));
+}
+function clock(ts) {
+  const d = new Date(ts.replace(" ", "T").replace(/\+00$/, "Z"));
+  return d.toTimeString().slice(0, 8) + "." + Math.floor(d.getMilliseconds() / 100);
+}
+let lastTape = new Set();
+function renderTape(tape) {
+  const at = ts => Date.parse(ts.replace(" ", "T").replace(/\+00$/, "Z"));
+  const rows = [...tape].sort((a, b) => at(b.traded_at) - at(a.traded_at));
+  const tb = document.querySelector("#tape tbody");
+  const now = new Set(rows.map(r => r.traded_at));
+  tb.replaceChildren(...rows.map(r => {
+    const buy = r.side === "1";
+    const tr = el("tr", {},
+      el("td", {}, clock(r.traded_at)),
+      el("td", { class: buy ? "side-b" : "side-s" }, buy ? "BUY" : "SELL"),
+      el("td", {}, fx(+r.quantity / 1e6, 1) + "mm"),
+      el("td", { style: "text-align:left" }, r.bond),
+      el("td", {}, r.currency),
+      el("td", {}, r.book.replace("BOOK-", "B")),
+      null);
+    if (lastTape.size && !lastTape.has(r.traded_at)) tr.animate([{ backgroundColor: "var(--accent-soft)" }, { backgroundColor: "transparent" }], { duration: 900 });
+    return tr;
+  }));
+  lastTape = now;
+}
+
+let updates = 0, lastRate = performance.now(), frontiers = 0, lastFrontier = null;
+function renderStatus(f) {
+  const lag = f.lag;
+  document.getElementById("lag").textContent = lag === null ? "—" : `${lag} ms`;
+  document.getElementById("dot").className = "dot" + (lag === null ? " bad" : lag > 1000 ? " bad" : lag > 350 ? " warn" : "");
+  if (f.frontier) {
+    const d = new Date(f.frontier);
+    document.getElementById("asof").textContent = "as of " + d.toTimeString().slice(0, 8) + "." + String(d.getMilliseconds()).padStart(3, "0");
+  }
+  const a = f.action;
+  renderStrip(f);
+  if (lastFrontier !== f.frontier) { frontiers++; lastFrontier = f.frontier; }
+  const t = performance.now();
+  if (t - lastRate > 2000) { updates = frontiers / ((t - lastRate) / 1000); frontiers = 0; lastRate = t; }
+  document.getElementById("updates").textContent = `${updates.toFixed(1)} updates/s · ${f.rows.length} cells`;
+  const s = f.stats || {};
+  const groups = s.arrangements || [];
+  const screens = groups.find(g => g.group.startsWith("board view"));
+  const demand = groups.find(g => g.group === "on-demand pivots");
+  const total = groups.reduce((x, g) => x + g.mb, 0);
+  const cores = groups.reduce((x, g) => x + g.cores, 0);
+  document.getElementById("engine").textContent =
+    `${s.traders ?? "—"} traders share one view (${s.layout_rows ?? "—"} layout rows, ${screens ? screens.mb : "—"} MB)` +
+    (demand ? ` · ${s.on_demand} on-demand ${demand.mb} MB` : "") +
+    ` · Materialize ${total.toFixed(0)} MB, ${cores.toFixed(1)} cores ⓘ`;
+  const pop = document.getElementById("pop");
+  if (pop.classList.contains("open")) {
+    pop.replaceChildren(el("table", {}, el("tr", {}, el("td", {}, ""), el("td", {}, "MB"), el("td", {}, "cores")),
+      ...groups.map(g => el("tr", {}, el("td", {}, g.group), el("td", { style: "text-align:right" }, fx(g.mb, 1)), el("td", { style: "text-align:right" }, fx(g.cores, 2))))),
+      el("div", { class: "hint" }, "Arrangement sizes and operator time from mz_introspection, every 3 s. " +
+        "The board view is one dataflow for every trader on a cube layout. Each on-demand layout and each position pane is its own SUBSCRIBE dataflow."));
+  }
+  const ov = document.getElementById("overlay");
+  gridwrap.classList.toggle("loading", !!f.loading && f.mode !== "hot");
+  if (f.loading && a) ov.textContent = `starting live query … ${a.waiting_ms ?? 0} ms`;
+}
+
+function renderStrip(f) {
+  const a = f.action, live = f.mode !== "hot";
+  const serve = document.getElementById("serve");
+  const text = document.getElementById("serve-text");
+  const what = a ? (a.what === "layout" ? `opened ${a.label}` : `${a.what} ${a.label}`) : "";
+  if (f.error) {
+    serve.className = "serve err"; serve.textContent = "QUERY FAILED";
+    text.replaceChildren(el("b", {}, f.error), el("span", { class: "why" }, "The SQL is under “SQL & timings”. Fix or remove the field."));
+  } else if (live) {
+    serve.className = "serve live"; serve.textContent = "LIVE QUERY";
+    const mb = f.query_mb !== null && f.query_mb !== undefined
+      ? ` · this query holds ${f.query_mb < 0.1 ? "<0.1" : fx(f.query_mb, 1)} MB` : "";
+    const why = f.force_live ? "Forced live: the cube could answer this, but this compares a fresh SUBSCRIBE." :
+      "Nothing was prepared for this layout. It is a new SUBSCRIBE over the blotter, started by your click; each expand restarts it.";
+    text.replaceChildren(
+      a && a.ms === null ? el("span", {}, el("span", { class: "spin" }), `${what}: starting a SUBSCRIBE … `, el("span", { class: "big" }, `${a.waiting_ms} ms`))
+        : el("span", {}, a ? `${what}: first numbers in ` : "", a ? el("span", { class: "big" }, `${a.ms} ms`) : "", mb),
+      el("span", { class: "why" }, why));
+  } else {
+    serve.className = "serve hot"; serve.textContent = "PRE-MAINTAINED";
+    text.replaceChildren(
+      el("span", {}, a ? `${what}: numbers in ` : "", a ? el("span", { class: "big" }, a.ms !== null ? `${a.ms} ms` : `… ${a.waiting_ms} ms`) : "",
+        " · no new dataflow"),
+      el("span", { class: "why" }, "Served by the shared cube, kept up to date for every trader. Your click " +
+        (a && a.what !== "layout" ? "wrote one row to board_expanded." : "rewrote your layout rows in board_layout and board_expanded.")));
+  }
+  const d = document.getElementById("detail");
+  if (d.classList.contains("open")) {
+    const sql = document.getElementById("sql");
+    const q = live ? `SUBSCRIBE (\n${f.sql || ""}\n)` :
+      `SUBSCRIBE (${f.sql || ""})\n\n-- 'board' is one indexed view shared by every trader. This trader's layout is rows in\n-- board_layout, board_across, board_expanded and board_measures; clicks write those rows.`;
+    if (sql.textContent !== q) sql.textContent = q;
+    document.querySelector("#hist tbody").replaceChildren(...(f.history || []).map(h => el("tr", {},
+      el("td", {}, new Date(h.t0).toTimeString().slice(0, 8)),
+      el("td", { style: `color:var(${h.via === "hot" ? "--hot" : "--demand"})` }, h.via === "hot" ? "cube" : "live"),
+      el("td", { title: h.what === "layout" ? h.label : `${h.what} ${h.label}` }, h.what === "layout" ? h.label : `${h.what} ${h.label}`),
+      el("td", { style: "font-family:var(--mono)" }, `${h.ms} ms`))));
+  }
+}
+document.getElementById("detail-btn").addEventListener("click", e => {
+  document.getElementById("detail").classList.toggle("open");
+  e.target.classList.toggle("on");
+  if (frame) renderStrip(frame);
+});
+document.getElementById("force-live").addEventListener("change", e => {
+  layout.force_live = e.target.checked; saveViews(); renderTabs();
+  expandedLocal.clear(); layout.expanded = [];
+  pushLayout();
+});
+document.getElementById("engine").addEventListener("click", () => document.getElementById("pop").classList.toggle("open"));
+
+// ---------------------------------------------------------------------------
+// Stream
+// ---------------------------------------------------------------------------
+function connect() {
+  const es = new EventSource(`/events?trader=${encodeURIComponent(trader)}`);
+  es.onmessage = e => {
+    frame = JSON.parse(e.data);
+    // Until the server has our layout, show nothing stale.
+    if (JSON.stringify(frame.layout.rows) !== JSON.stringify(layout.rows) || frame.layout.across !== layout.across) {
+      renderStatus(frame);
+      return;
+    }
+    render();
+    renderDrill(frame);
+    renderTape(frame.tape || []);
+    renderStatus(frame);
+  };
+  // After a server restart the new session knows nothing of this tab: resend it.
+  let dropped = false;
+  es.onopen = () => { if (dropped) { dropped = false; expandedLocal.clear(); for (const p of layout.expanded || []) expandedLocal.add(keyOf(p)); pushLayout(); } };
+  es.onerror = () => { dropped = true; document.getElementById("dot").className = "dot bad"; document.getElementById("lag").textContent = "reconnecting"; };
+}
+
+let start = 0;
+try { start = Math.min(views.length - 1, +(localStorage.getItem("board.view." + trader) || 0)); } catch (e) {}
+loadView(start);
+connect();
+gridwrap.focus();
+</script>
+</body>
+</html>

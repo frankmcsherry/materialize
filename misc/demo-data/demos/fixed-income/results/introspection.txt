@@ -1,0 +1,29 @@
+# Introspection on vs off, same workload, fresh container (mz-exp, materialize/materialized v26.43.0, Docker, 18-core Apple silicon).
+# PIVOTS=board ./load.sh, 3h retention, 5s repricing, default_timestamp_interval 100ms. A second board.py (port 8766)
+# with three cube traders (two bg>ccy>sector, one bg>ccy with tenor across), each with a root positions pane, plus the trade tape.
+# Off = ALTER CLUSTER quickstart SET (INTROSPECTION INTERVAL = 0), confirmed by "cannot read log sources of replica with
+# disabled introspection". Process cores: compute clusterd's /proc utime+stime over 15s. Buckets: fgbreakdown.py on a
+# 15s, 99 Hz CPU profile from the replica's /prof endpoint (raw: results/profiles/intro_{on,off}_{800,200}.mzfg.gz).
+# One run per configuration; board.py/seed restarted after each replica change and given 45s to settle.
+
+                                          16 workers        4 workers
+                                          on      off       on      off
+process cores (/proc)                     6.25    3.51      2.36    1.73
+profile total                             5.65    3.33      2.14    1.74
+  progress: pointstamp propagation        1.04    0.82      0.28    0.26
+  progress: broadcast between workers     0.49    0.37      0.04    0.04
+  progress: other subgraph scheduling     0.34    0.14      0.06    0.06
+  progress: frontier/changebatch          0.12    0.05      0.02    0.02
+  progress, all                           1.99    1.38      0.40    0.38
+  introspection logging                   0.76    0.20      0.20    0.06
+  operators: other logic                  1.13    0.63      0.81    0.73
+  operators: arrangement merges           0.95    0.55      0.52    0.42
+  other threads / worker loop             0.83    0.57      0.21    0.17
+
+operators.py with introspection on, 16 workers (off cannot be read): 2,547 operators, 2,314 leaf, 233 subgraphs;
+690 leaf operators (30%) are introspection/lifecycle (ArrangementSize x346, LogOperatorHydration x190, StartSignal x63,
+Probe x45, InspectBatch x23). Leaf 3.59 cores, subgraph self 3.41 cores; those sum above the /proc total because
+operators.py's own introspection queries ran on the same replica during that window.
+
+With introspection off, some logging code still runs: ~0.07 cores at 16 workers under
+LoggingContext::reachability_logger closures, plus compute-event ColumnBuilder pushes (the 0.20 left in that bucket).

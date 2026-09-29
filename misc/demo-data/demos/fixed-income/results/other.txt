@@ -1,0 +1,38 @@
+# Other measurements, transcribed from the terminal. 3 hours retention, price slots 50.
+
+## Median from histograms vs exact (same timestamp), market value
+    path     |  exact  | approx  | err_pct
+ All         |  -85290 |  -84992 |    0.35
+ Covered     |  110763 |  111616 |    0.77
+ Distressed  |  178276 |  178176 |   -0.06
+ EM          |  -93197 |  -93184 |    0.01
+ HY Credit   |  -89566 |  -89088 |    0.53
+ IG Credit   | -106816 | -107520 |   -0.66
+ Munis       | -176251 | -178176 |   -1.09
+ Rates       |  -90351 |  -91136 |   -0.87
+ Securitized |  -95289 |  -95232 |    0.06
+
+## Histogram size per tree level
+ level | nodes | positions | buckets | positions_per_node | buckets_per_node
+     0 |     1 |     88397 |     465 |              88397 |              465
+     1 |     8 |     88397 |    3496 |              11050 |              437
+     2 |    64 |     88397 |   17895 |               1381 |              280
+     3 |   768 |     88397 |   59210 |                115 |               77
+     4 |  4245 |     88397 |   79971 |                 21 |               19
+
+## pivot_leaf split: same grouping, sums only vs min/max only
+x_sums   4.2 MB
+x_minmax 19.0 MB
+
+## Expand/collapse round trip (INSERT/DELETE on expanded -> rows seen in SUBSCRIBE)
+expand 129, 121, 73, 30 ms; collapse 77, 79, 69, 36 ms; median 77 ms
+
+## Writes advance time (earlier harness, 1s default_timestamp_interval, client INSERTing at 10Hz)
+cube/rollup data lag p50 ~48-52 ms, p99 ~80-100 ms; INSERT ack p50 12 ms, INSERT visible in SUBSCRIBE p50 12 ms
+
+## Process memory vs arrangements (3h/50, 4 traders, steady state)
+empty container: user replica clusterd RSS 199 MB
+loaded: user replica clusterd RSS 2340, 2279, 2158 MB at 1-minute intervals; arrangement sum 182 MB
+
+## 3h / price slots 5 (every bond twice a second)
+did not keep up: container CPU pegged, SQL queries timed out, run aborted after ~15 minutes

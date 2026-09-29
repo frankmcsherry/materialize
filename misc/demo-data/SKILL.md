@@ -363,6 +363,7 @@ purposes. Re-allocate.
 | `domains/iot.sql`        | Devices, readings, alerts      | High cardinality; threshold alerts; per-site rollup            | No |
 | `domains/clickstream.sql`| Sessions, page views, funnel   | Funnel analytics; conversion rate by channel                   | Yes |
 | `domains/zoo.sql`        | Zoo visits, ratings, shipments | Three invariants at once, richest domain. Proof that a domain needn't be boring: front-of-house ratings correlate with back-of-house consultations by construction. | Yes |
+| `domains/fixed_income.sql` | Bonds, trades, positions, prices | Ticks every 100ms. Per-bond positions net to zero against Street. A live trade desk board on it in `demos/fixed-income/`, with a `PROMPT.md` recipe for rebuilding it with changes. | No |
 
 Loading more than one ecommerce/banking/clickstream domain at once gives you
 the cross-product demo: "show me Person 042's orders, their transactions, and
@@ -386,5 +387,8 @@ misc/demo-data/
         ├── banking.sql
         ├── iot.sql
         ├── clickstream.sql
-        └── zoo.sql
+        ├── zoo.sql
+        └── fixed_income.sql
+└── demos/
+    └── fixed-income/     live trade desk board; PROMPT.md is the recipe
 ```
