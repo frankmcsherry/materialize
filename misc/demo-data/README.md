@@ -40,6 +40,9 @@ Teardown: `$PSQL -f assets/teardown.sql`.
 * **iot** — devices, readings, threshold alerts
 * **clickstream** — sessions, page views, conversion funnel
 * **zoo** — zoo visits, ratings, shipments; three invariants at once
+* **staffing** — an org chart with churn, PTO, and per-manager staffing
+  requirements. Needs a 7-day scaffold. See
+  [`demos/staffing`](demos/staffing/README.md) for a scripted walkthrough.
 
 Load more than one to see Materialize keep multiple data products in sync
 over the same shared identity space.

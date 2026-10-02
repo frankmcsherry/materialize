@@ -363,6 +363,7 @@ purposes. Re-allocate.
 | `domains/iot.sql`        | Devices, readings, alerts      | High cardinality; threshold alerts; per-site rollup            | No |
 | `domains/clickstream.sql`| Sessions, page views, funnel   | Funnel analytics; conversion rate by channel                   | Yes |
 | `domains/zoo.sql`        | Zoo visits, ratings, shipments | Three invariants at once, richest domain. Proof that a domain needn't be boring: front-of-house ratings correlate with back-of-house consultations by construction. | Yes |
+| `domains/staffing.sql`   | Seats, employees, PTO, staffing requirements | Recursive org closure kept live through hires, departures and reorgs; requested vs. granted PTO; one index keyed by viewer scopes every manager. Five invariants. Needs `retention = '7 days'`. Walkthrough in `demos/staffing/`. | No |
 
 Loading more than one ecommerce/banking/clickstream domain at once gives you
 the cross-product demo: "show me Person 042's orders, their transactions, and
@@ -386,5 +387,8 @@ misc/demo-data/
         ├── banking.sql
         ├── iot.sql
         ├── clickstream.sql
-        └── zoo.sql
+        ├── zoo.sql
+        └── staffing.sql
+└── demos/
+    └── staffing/         scripted walkthrough and README
 ```
